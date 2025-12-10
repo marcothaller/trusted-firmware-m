@@ -1,5 +1,8 @@
 # List of files and extensions to be ignored
 
+# Build directory
+config_default
+
 # Eclipse
 *.project
 *.cproject
