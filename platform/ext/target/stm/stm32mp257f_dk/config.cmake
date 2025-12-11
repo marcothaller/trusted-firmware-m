@@ -7,20 +7,16 @@
 
 # set board specific config
 ########################## STM32 #######################################
-#Before Soc config
-set(STM32_STM32MP257f_EV1_REV   "revA"				    CACHE STRING	"Select ev1 board revision: revA" FORCE)
+# Before Soc config
 
-SET(DTS_BOARD_BASE "arm/stm/stm32mp257f-ev1")
-
-if (NOT STM32_STM32MP257f_EV1_REV STREQUAL "revA")
-	message(FATAL_ERROR "Board revision not defined by st")
-	string(APPEND DTS_BOARD_BASE "-${STM32_STM32MP257f_EV1_REV}")
-endif()
+SET(DTS_BOARD_BASE "arm/stm/stm32mp257f-dk")
 
 # set common soc config
 if (EXISTS ${STM_SOC_DIR}/config.cmake)
-	include(${STM_SOC_DIR}/config.cmake)
+    include(${STM_SOC_DIR}/config.cmake)
 endif()
 
-#After soc config
-set(STM32_BOARD_MODEL           "stm32mp257f eval1"		CACHE STRING	"Define board model name" FORCE)
+# After soc config
+set(STM32_BOARD_MODEL	                "stm32mp257f dk"        CACHE STRING    "Define board model name" FORCE)
+set(STM32_DDR_PHY_FILE	                "lpddr4_pmu_train.bin"  CACHE STRING    "Set ddr phy binary name need for your board" FORCE)
+set(TFM_PARTITION_PROTECTED_STORAGE     OFF                     CACHE BOOL      "Enable Protected Storage partition" FORCE)
