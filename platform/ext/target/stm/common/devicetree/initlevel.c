@@ -5,9 +5,11 @@
  */
 #include <device.h>
 #include <debug.h>
+#include <iterable_sections.h>
 
 extern const struct init_entry __init_start[];
 extern const struct init_entry __init_EARLY_start[];
+extern const struct init_entry __init_ARCH_start[];
 extern const struct init_entry __init_PRE_CORE_start[];
 extern const struct init_entry __init_CORE_start[];
 extern const struct init_entry __init_POST_CORE_start[];
@@ -18,6 +20,7 @@ void sys_init_run_level(enum init_level level)
 {
 	static const struct init_entry *levels[] = {
 		__init_EARLY_start,
+		__init_ARCH_start,
 		__init_PRE_CORE_start,
 		__init_CORE_start,
 		__init_POST_CORE_start,
@@ -72,4 +75,14 @@ bool device_is_ready(const struct device *dev)
 	}
 
 	return dev->state->initialized && (dev->state->init_res == 0U);
+}
+
+size_t device_get_all(struct device const **devices)
+{
+	size_t cnt;
+
+	STRUCT_SECTION_GET(device, 0, devices);
+	STRUCT_SECTION_COUNT(device, &cnt);
+
+	return cnt;
 }

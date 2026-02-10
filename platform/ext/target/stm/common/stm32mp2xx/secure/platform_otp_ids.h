@@ -21,6 +21,8 @@ enum tfm_otp_element_id_t {
     PLAT_OTP_ID_IAK_TYPE,
     PLAT_OTP_ID_IAK_ID,
 
+    PLAT_OTP_ID_FIP_EDMK,
+
     PLAT_OTP_ID_BOOT_SEED,
     PLAT_OTP_ID_LCS,
     PLAT_OTP_ID_IMPLEMENTATION_ID,
@@ -58,6 +60,8 @@ enum tfm_otp_element_id_t {
     PLAT_OTP_ID_REV_ID,
     PLAT_OTP_ID_PACKAGE,
     PLAT_OTP_ID_BOARD_ID,
+
+    PLAT_OTP_ID_STM32_CERTIF,
 
     PLAT_OTP_ID_MAX = UINT32_MAX,
 };

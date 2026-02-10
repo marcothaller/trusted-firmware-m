@@ -25,6 +25,9 @@
 #include "internal_status_code.h"
 
 extern uintptr_t spm_boundary;
+#if PLATFORM_HAS_NS_NOTIF
+extern uint32_t ns_evt_owned;
+#endif
 
 #if TFM_ISOLATION_LEVEL != 1
 extern void tfm_flih_func_return(psa_flih_result_t result);
@@ -71,6 +74,9 @@ uint32_t tfm_flih_prepare_depriv_flih(struct partition_t *p_owner_sp,
     if (fih_not_eq(fih_bool, fih_int_encode(false))) {
         FIH_CALL(tfm_hal_activate_boundary, fih_rc,
                  p_owner_sp->p_ldinf, p_owner_sp->boundary);
+        if (fih_not_eq(fih_rc, fih_int_encode(TFM_HAL_SUCCESS))) {
+            tfm_core_panic();
+        }
     }
 
     /*
@@ -107,6 +113,9 @@ uint32_t tfm_flih_return_to_isr(psa_flih_result_t result,
     if (fih_not_eq(fih_bool, fih_int_encode(false))) {
         FIH_CALL(tfm_hal_activate_boundary, fih_rc,
                  p_prev_sp->p_ldinf, p_prev_sp->boundary);
+        if (fih_not_eq(fih_rc, fih_int_encode(TFM_HAL_SUCCESS))) {
+            tfm_core_panic();
+        }
     }
 
     /*
@@ -173,6 +182,12 @@ void spm_handle_interrupt(void *p_pt, const struct irq_load_info_t *p_ildi)
         flih_result = PSA_FLIH_SIGNAL;
     } else {
         /* FLIH Model Handling */
+#if PLATFORM_HAS_NS_NOTIF
+	/*  save ns_evt_owned  set it according to part */
+	uint32_t  mask = ns_evt_owned;
+	/*  set partition ns event mask */
+	ns_evt_owned = p_part->p_ldinf->ns_evt_owned;
+#endif
 #if TFM_ISOLATION_LEVEL == 1
         flih_result = p_ildi->flih_func();
         (void)fih_bool;
@@ -187,6 +202,10 @@ void spm_handle_interrupt(void *p_pt, const struct irq_load_info_t *p_ildi)
                                                 (uintptr_t)p_ildi->flih_func,
                                                 GET_CURRENT_COMPONENT());
         }
+#endif
+#if PLATFORM_HAS_NS_NOTIF
+	/*  restore ns event mask */
+	ns_evt_owned = mask;
 #endif
     }
 

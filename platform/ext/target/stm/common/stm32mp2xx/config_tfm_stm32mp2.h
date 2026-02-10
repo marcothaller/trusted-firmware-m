@@ -18,8 +18,10 @@
 
 #define SCP_STACK_SIZE 0x2000
 #define IPCC_STACK_SIZE 0x2000
+#define STL_STACK_SIZE 0x2000
 
 #define CONFIG_TFM_SCHEDULE_WHEN_NS_INTERRUPTED 1
+#define CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT 1
 
 #define RSE_COMMS_PAYLOAD_MAX_SIZE (0x40 + 0x800)
 
@@ -36,10 +38,12 @@
 	     psa_get(MAILBOX_SIGNAL_GET_ACTIVE(signals), &msg); \
 	     psa_reply(msg.handle, PSA_SUCCESS); }
 
-#if defined(STM32_M33TDCID)
 /* Use stored NV seed to provide entropy */
 #undef CRYPTO_NV_SEED
 #define CRYPTO_NV_SEED 0
-#endif
+#define CRYPTO_EXT_RNG 1
+
+/* TLV minor used for platform boot data with TLV_MAJOR_PLATFORM */
+#define TLV_PLAT_DDRENCKEY 0
 
 #endif /* __CONFIG_TFM_STM32MP2_H__ */

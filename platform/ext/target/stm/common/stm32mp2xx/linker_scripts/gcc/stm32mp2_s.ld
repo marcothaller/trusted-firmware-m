@@ -246,6 +246,17 @@ SECTIONS
         . = ALIGN(TFM_LINKER_DEFAULT_ALIGNMENT);
     } > FLASH
 
+#if defined(TFM_PARTITION_PM)
+    tfm_lp_fw ALIGN(TFM_LINKER_DEFAULT_ALIGNMENT) (READONLY) :
+    {
+	__tfm_lp_fw_start = .;
+	KEEP(TFM_LP_FW(.data*))
+	__tfm_lp_fw_end = .;
+
+        . = ALIGN(TFM_LINKER_DEFAULT_ALIGNMENT);
+    } > FLASH
+#endif
+
 #include <linker/devices.ld>
 
     .TFM_UNPRIV_CODE ALIGN(TFM_LINKER_UNPRIV_CODE_ALIGNMENT) :
@@ -416,6 +427,9 @@ SECTIONS
         *(SORT_BY_ALIGNMENT(.data*))
 
         KEEP(*(.jcr*))
+#ifdef DEVSTATE_SECTION
+        DEVSTATE_SECTION
+#endif
         . = ALIGN(TFM_LINKER_DEFAULT_ALIGNMENT);
 
     } > RAM AT> FLASH
@@ -457,6 +471,10 @@ SECTIONS
 
     Image$$ER_TFM_DATA$$Base = ADDR(.TFM_DATA);
     Image$$ER_TFM_DATA$$Limit = ADDR(.TFM_DATA) + SIZEOF(.TFM_DATA) + SIZEOF(.TFM_BSS);
+
+#ifdef PM_DEVICE_SLOTS_AREA
+    PM_DEVICE_SLOTS_AREA
+#endif
 
 #if defined(CONFIG_TFM_USE_TRUSTZONE)
     Image$$ER_VENEER$$Base = ADDR(.gnu.sgstubs);

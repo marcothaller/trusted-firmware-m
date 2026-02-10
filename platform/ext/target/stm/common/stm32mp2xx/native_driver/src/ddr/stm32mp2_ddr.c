@@ -228,7 +228,7 @@ static void ddr_reset(struct stm32mp_ddr_priv *priv)
 
 	udelay(DDR_DELAY_1US);
 
-	//mmio_setbits_32(priv->rcc + RCC_DDRITFCFGR, RCC_DDRITFCFGR_DDRRST);
+	mmio_setbits_32(priv->rcc + RCC_DDRITFCFGR, RCC_DDRITFCFGR_DDRRST);
 	mmio_write_32(priv->rcc + RCC_DDRPHYCAPBCFGR,
 		      RCC_DDRPHYCAPBCFGR_DDRPHYCAPBEN | RCC_DDRPHYCAPBCFGR_DDRPHYCAPBLPEN);
 	mmio_write_32(priv->rcc + RCC_DDRCAPBCFGR,
@@ -242,10 +242,8 @@ static void ddr_standby_reset(struct stm32mp_ddr_priv *priv)
 {
 	udelay(DDR_DELAY_1US);
 
-	mmio_setbits_32(priv->rcc + RCC_DDRCPCFGR, RCC_DDRCPCFGR_DDRCPRST);
-
-//	mmio_write_32(priv->rcc + RCC_DDRCPCFGR,
-//		      RCC_DDRCPCFGR_DDRCPEN | RCC_DDRCPCFGR_DDRCPLPEN | RCC_DDRCPCFGR_DDRCPRST);
+	mmio_write_32(priv->rcc + RCC_DDRCPCFGR,
+		      RCC_DDRCPCFGR_DDRCPEN | RCC_DDRCPCFGR_DDRCPLPEN | RCC_DDRCPCFGR_DDRCPRST);
 	mmio_setbits_32(priv->rcc + RCC_DDRITFCFGR, RCC_DDRITFCFGR_DDRRST);
 	mmio_write_32(priv->rcc + RCC_DDRPHYCAPBCFGR,
 		      RCC_DDRPHYCAPBCFGR_DDRPHYCAPBEN | RCC_DDRPHYCAPBCFGR_DDRPHYCAPBLPEN |
@@ -264,8 +262,7 @@ static void ddr_standby_reset_release(struct stm32mp_ddr_priv *priv)
 {
 	udelay(DDR_DELAY_1US);
 
-//	mmio_write_32(priv->rcc + RCC_DDRCPCFGR, RCC_DDRCPCFGR_DDRCPEN | RCC_DDRCPCFGR_DDRCPLPEN);
-	mmio_clrbits_32(priv->rcc + RCC_DDRCPCFGR, RCC_DDRCPCFGR_DDRCPRST);
+	mmio_write_32(priv->rcc + RCC_DDRCPCFGR, RCC_DDRCPCFGR_DDRCPEN | RCC_DDRCPCFGR_DDRCPLPEN);
 	mmio_clrbits_32(priv->rcc + RCC_DDRITFCFGR, RCC_DDRITFCFGR_DDRRST);
 	mmio_clrbits_32(priv->rcc + RCC_DDRPHYCAPBCFGR, RCC_DDRPHYCAPBCFGR_DDRPHYCAPBRST);
 	mmio_write_32(priv->rcc + RCC_DDRCFGR, RCC_DDRCFGR_DDRCFGEN | RCC_DDRCFGR_DDRCFGLPEN);
@@ -363,7 +360,7 @@ void stm32mp2_ddr_init(struct stm32mp_ddr_priv *priv,
 		       struct stm32mp_ddr_config *config)
 {
 	int ret = -EINVAL;
-	uint32_t ddr_retdis;
+	bool ddr_ret;
 	enum ddr_type ddr_type;
 	bool cid_filtering = is_ddr_cid_filtering_enabled();
 
@@ -389,13 +386,13 @@ void stm32mp2_ddr_init(struct stm32mp_ddr_priv *priv,
 	if (cid_filtering) {
 		ddr_disable_cid_filtering();
 	}
-	ddr_retdis = mmio_read_32(priv->pwr + _PWR_CR11) & _PWR_CR11_DDRRETDIS;
+	ddr_ret = stm32_pwr_ddr_retention_get(priv->pwr);
 	if (cid_filtering) {
 		ddr_enable_cid_filtering();
 	}
 
 	if (config->self_refresh) {
-		if (ddr_retdis == _PWR_CR11_DDRRETDIS) {
+		if (!ddr_ret) {
 			DDR_VERBOSE("self-refresh aborted: no retention\n");
 			config->self_refresh = false;
 		}
@@ -408,7 +405,7 @@ void stm32mp2_ddr_init(struct stm32mp_ddr_priv *priv,
 		if (cid_filtering) {
 			ddr_disable_cid_filtering();
 		}
-		mmio_setbits_32(priv->pwr + _PWR_CR11, _PWR_CR11_DDRRETDIS);
+		stm32_pwr_ddr_retention_set(priv->pwr, false);
 		if (cid_filtering) {
 			ddr_enable_cid_filtering();
 		}
@@ -448,7 +445,7 @@ void stm32mp2_ddr_init(struct stm32mp_ddr_priv *priv,
 		if (cid_filtering) {
 			ddr_disable_cid_filtering();
 		}
-		mmio_setbits_32(priv->pwr + _PWR_CR11, _PWR_CR11_DDRRETDIS);
+		stm32_pwr_ddr_retention_set(priv->pwr, false);
 		if (cid_filtering) {
 			ddr_enable_cid_filtering();
 		}

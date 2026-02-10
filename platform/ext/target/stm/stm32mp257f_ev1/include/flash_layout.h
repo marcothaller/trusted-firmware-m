@@ -22,6 +22,7 @@
 #include "device_cfg.h"
 #include "devicetree.h"
 #include <cmsis_fixed_partitions.h>
+#include <soc_config.h>
 
 /*
  * In M33tdcid
@@ -61,45 +62,6 @@
  *       Z:0x0000_0000 - Z:0x0008_0000		    Secure image
  *       Z:0x0008_0000 - Z:0x0010_0000		    Non-secure image
  */
-
-/* This header file is included from linker scatter file as well, where only a
- * limited C constructs are allowed. Therefore it is not possible to include
- * here the platform_base_address.h to access flash related defines. To resolve
- * this some of the values are redefined here with different names, these are
- * marked with comment.
- */
-#define S_RETRAM_ALIAS_BASE		(0x0E080000)
-#define NS_RETRAM_ALIAS_BASE		(0x0A080000)
-#define RETRAM_SZ			(0x20000)		/* 128KB */
-
-#define S_SRAM2_ALIAS_BASE		(0x0E060000)
-#define NS_SRAM2_ALIAS_BASE		(0x0A060000)
-#define SRAM2_SZ			(0x20000)		/* 128KB */
-
-#define S_SRAM1_ALIAS_BASE		(0x0E040000)
-#define NS_SRAM1_ALIAS_BASE		(0x0A040000)
-#define SRAM1_SZ			(0x20000)		/* 128KB */
-
-#define S_SYSRAM_ALIAS_BASE		(0x0E000000)
-#define NS_SYSRAM_ALIAS_BASE		(0x0A000000)
-#define SYSRAM_SZ			(0x40000)		/* 256KB */
-
-#define S_BKPSRAM_ALIAS_BASE		(0x52000000)
-#define NS_BKPSRAM_ALIAS_BASE		(0x42000000)
-#define BKPSRAM_SZ			(0x2000)		/* 8KB */
-
-#define S_BKPREG_ALIAS_BASE		(0x56010000 + 0x100)	/* tamp base + bkpreg offset */
-#define NS_BKPREG_ALIAS_BASE		(0x46010000 + 0x100)
-#define BKPREG_SZ			(0x80)			/* 128B */
-
-#define OSPI_MEM_BASE			(0x60000000)
-
-#define NS_DDR_ALIAS_BASE		(0x80000000)
-
-/* 3 areas are available to define all regions of cache */
-#define NS_REMAP3_ALIAS_BASE		(0x18000000)
-#define NS_REMAP2_ALIAS_BASE		(0x10000000)
-#define NS_REMAP1_ALIAS_BASE		(0x00000000)
 
 /*
  * Offset and size definition in flash area used by assemble.py
@@ -193,15 +155,7 @@
 #ifdef STM32_M33TDCID
 
 #define FLASH_BASE_ADDRESS		(OSPI1_MEM_BASE)
-#define FLASH_AREA_IMAGE_SECTOR_SIZE	SPI_NOR_FLASH_SECTOR_SIZE
-
-#define FLASH_IMAGE_OFFSET		0x0
-
-#define FLASH_AREA_BL2_OFFSET		FLASH_IMAGE_OFFSET
-#define FLASH_AREA_BL2_SIZE		RETRAM_SZ
-
-//#define FLASH_S_PARTITION_SIZE		IMAGE_S_CODE_SIZE + BL2_HEADER_SIZE
-//#define FLASH_NS_PARTITION_SIZE		IMAGE_NS_CODE_SIZE + BL2_TRAILER_SIZE
+#define FLASH_AREA_IMAGE_SECTOR_SIZE	TFM_HAL_FLASH_PROGRAM_UNIT
 
 /*
  * Not used, only the RAM loading firmware upgrade operation
@@ -212,7 +166,7 @@
 /* Maximum number of image sectors supported by the bootloader. */
 #define MCUBOOT_MAX_IMG_SECTORS		((IMAGE_S_CODE_SIZE + \
 					  IMAGE_NS_CODE_SIZE) / \
-					 SPI_NOR_FLASH_SECTOR_SIZE)
+					 TFM_HAL_FLASH_PROGRAM_UNIT)
 
 #if !defined(MCUBOOT_IMAGE_NUMBER) || (MCUBOOT_IMAGE_NUMBER == 2) || (MCUBOOT_IMAGE_NUMBER == 3)
 #if STM32_BL2
@@ -319,6 +273,7 @@
                                          ((x) == DDR_FIRMWARE_ID) ? FLASH_AREA_3_ID : \
                                          255 )
 #endif
+
 /*
  * On stm32mp2, only the RAM loading firmware upgrade operation
  * is supported. The scratch area is not used
@@ -331,7 +286,10 @@
 #define FLASH_AREA_IMAGE_SCRATCH        255
 
 /*
- * DDR firmware
+ * DDR firmware is copied from boot device to mcuram memory
+ *   - boot device is defined by ddr_fw_primary_partition of dt
+ *   - mcuram is defined reserved memory of dt
+ *
  *   considerate the mcuram like the max size of ddr fw size
  */
 #define DDR_FW_SIZE			DT_REG_SIZE(DT_NODELABEL(ddr_fw_buffer)) /* exclusif for ddr */

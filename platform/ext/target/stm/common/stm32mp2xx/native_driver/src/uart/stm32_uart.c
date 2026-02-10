@@ -13,6 +13,7 @@
 #include <stdbool.h>
 
 #include <device.h>
+#include <pm/device.h>
 #include <lib/mmio.h>
 #include <lib/mmiopoll.h>
 #include <lib/timeout.h>
@@ -45,6 +46,8 @@ struct stm32_uart_config {
 
 struct stm32_uart_data {
 	struct stm32_uart_init_s init;
+	struct uart_config uart_config;
+	struct clk *clk;
 };
 
 static const uint16_t presc_table[UART_PRESCALER_MAX + 1] = {
@@ -181,7 +184,6 @@ static uint32_t _stm32_uart_set_config(const struct device *dev)
 	uint32_t tmpreg;
 	unsigned long clockfreq;
 	uint16_t brrtemp;
-	struct clk *clk;
 
 	/*
 	 * ---------------------- USART CR1 Configuration --------------------
@@ -232,13 +234,12 @@ static uint32_t _stm32_uart_set_config(const struct device *dev)
 	 * Configure UART Clock Prescaler : set PRESCALER according to
 	 * drv_data->init.prescaler value.
 	 */
-        _ASSERT(drv_data->init.prescaler <= UART_PRESCALER_MAX);
+	_ASSERT(drv_data->init.prescaler <= UART_PRESCALER_MAX);
 	mmio_clrsetbits_32(drv_cfg->base + _USART_PRESC, USART_PRESC_PRESCALER,
 			   drv_data->init.prescaler);
 
 	/*---------------------- USART BRR configuration --------------------*/
-	clk = clk_get(drv_cfg->clk_dev, drv_cfg->clk_subsys);
-	clockfreq = clk_get_rate(clk);
+	clockfreq = clk_get_rate(drv_data->clk);
 	if (clockfreq == 0UL) {
 		return -EINVAL;
 	}
@@ -405,7 +406,18 @@ static int stm32_uart_configure(const struct device *dev,
 	mmio_setbits_32(drv_cfg->base + _USART_CR1, USART_CR1_UE);
 
 	/* TEACK and/or REACK to check */
-	return _stm32_uart_check_idle_state(dev);
+	err = _stm32_uart_check_idle_state(dev);
+	if (err)
+		goto err_check;
+
+	memcpy(&drv_data->uart_config, uart_cfg, sizeof(*uart_cfg));
+
+	return 0;
+
+err_check:
+	/* Disable the peripheral */
+	mmio_clrbits_32(drv_cfg->base + _USART_CR1, USART_CR1_UE);
+	return err;
 }
 
 static int stm32_uart_tx(const struct device *dev, const uint8_t *buf,
@@ -489,44 +501,87 @@ static const struct uart_driver_api uart_stm32_api = {
 int stm32_uart_dt_init(const struct device *dev)
 {
 	const struct stm32_uart_config *drv_cfg = dev_get_config(dev);
-	struct clk *clk;
+	struct stm32_uart_data *drv_data = dev_get_data(dev);
 	int err;
 
-	clk = clk_get(drv_cfg->clk_dev, drv_cfg->clk_subsys);
-	if (!clk)
+	drv_data->clk = clk_get(drv_cfg->clk_dev, drv_cfg->clk_subsys);
+	if (!drv_data->clk)
 		return -ENODEV;
 
 	err = pinctrl_apply_state(drv_cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (err)
 		return err;
 
-	err = clk_enable(clk);
+	err = clk_enable(drv_data->clk);
 	if (err)
 		return err;
 
-	return 0;
+	return stm32_uart_configure(dev, &drv_data->uart_config);
 }
 
-#define STM32_UART_INIT(n)						\
-									\
-PINCTRL_DT_INST_DEFINE(n);						\
-									\
-static const struct stm32_uart_config stm32_uart_cfg_##n = {		\
-	.base = DT_INST_REG_ADDR(n),					\
-	.clk_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),		\
-	.clk_subsys = (clk_subsys_t) DT_INST_CLOCKS_CELL(n, bits),	\
-	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),			\
-};									\
-									\
-static struct stm32_uart_data stm32_uart_data_##n = {			\
-	.init.baud_rate = DT_INST_PROP_OR(n, current_speed, 0),		\
-};									\
-									\
-DEVICE_DT_INST_DEFINE(n,						\
-		      &stm32_uart_dt_init,				\
-		      &stm32_uart_data_##n,				\
-		      &stm32_uart_cfg_##n,				\
-		      CORE, 0,						\
+#ifdef CONFIG_PM_DEVICE
+static int stm32_uart_pm_action(const struct device *dev,
+			       enum pm_device_action action, uint32_t pm_hint)
+{
+	const struct stm32_uart_config *drv_cfg = dev_get_config(dev);
+	struct stm32_uart_data *drv_data = dev_get_data(dev);
+	int err = 0;
+
+	if (action == PM_DEVICE_ACTION_SUSPEND) {
+		err = pinctrl_apply_state_optional(drv_cfg->pcfg, PINCTRL_STATE_SLEEP);
+		if (err)
+			goto out;
+
+		clk_disable(drv_data->clk);
+	} else {
+		err = pinctrl_apply_state(drv_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+		if (err)
+			goto out;
+
+		err = clk_enable(drv_data->clk);
+		if (err)
+			goto out;
+
+		err = stm32_uart_configure(dev, &drv_data->uart_config);
+	}
+
+out:
+	return err;
+}
+#endif
+
+#define _UART_CFG(n)									\
+{											\
+	.baudrate = DT_INST_PROP_OR(n, current_speed, 0),				\
+	.parity = DT_INST_ENUM_IDX_OR(n, parity, UART_CFG_PARITY_NONE),			\
+	.stop_bits = DT_INST_ENUM_IDX_OR(n, stop_bits, UART_CFG_STOP_BITS_1),		\
+	.data_bits = DT_INST_ENUM_IDX_OR(n, data_bits, UART_CFG_DATA_BITS_8),		\
+	.flow_ctrl = DT_INST_PROP_OR(n, hw_flow_control, UART_CFG_FLOW_CTRL_NONE),	\
+}
+
+#define STM32_UART_INIT(n)								\
+											\
+PINCTRL_DT_INST_DEFINE(n);								\
+											\
+static const struct stm32_uart_config stm32_uart_cfg_##n = {				\
+	.base = DT_INST_REG_ADDR(n),							\
+	.clk_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),				\
+	.clk_subsys = (clk_subsys_t) DT_INST_CLOCKS_CELL(n, bits),			\
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),					\
+};											\
+											\
+static struct stm32_uart_data stm32_uart_data_##n = {					\
+	.uart_config = _UART_CFG(n),							\
+};											\
+											\
+PM_DEVICE_DT_INST_DEFINE(n, stm32_uart_pm_action);					\
+											\
+DEVICE_DT_INST_DEFINE(n,								\
+		      &stm32_uart_dt_init,						\
+		      PM_DEVICE_DT_INST_GET(n),						\
+		      &stm32_uart_data_##n,						\
+		      &stm32_uart_cfg_##n,						\
+		      CORE, 0,								\
 		      &uart_stm32_api);
 
 DT_INST_FOREACH_STATUS_OKAY(STM32_UART_INIT)

@@ -87,11 +87,12 @@ os.environ['LANG'] = 'C.UTF-8'
               default='hash', help='In what format to add the public key to '
               'the image manifest: full key or hash of the key.')
 @click.option('-k', '--key', metavar='filename')
+@click.option('--key-pswd', required=False, help='Password for the key file')
 @click.command(help='''Create a signed or unsigned image\n
                INFILE and OUTFILE are parsed as Intel HEX if the params have
                .hex extension, otherwise binary format is used''')
-def wrap(key, align, version, header_size, pad_header, layout, pad, confirm,
-         max_sectors, overwrite_only, endian, encrypt, infile, outfile,
+def wrap(key, key_pswd, align, version, header_size, pad_header, layout, pad,
+         confirm, max_sectors, overwrite_only, endian, encrypt, infile, outfile,
          dependencies, hex_addr, erased_val, save_enctlv, public_key_format,
          security_counter, encrypt_keylen, measured_boot_record):
 
@@ -100,9 +101,9 @@ def wrap(key, align, version, header_size, pad_header, layout, pad, confirm,
     rom_fixed = macro_parser.evaluate_macro(layout, rom_fixed_re, 0, 1)
 
     if measured_boot_record:
-        if "_s" in layout:
+        if "_s.o" in layout:
             record_sw_type = "SPE"
-        elif "_ns" in layout:
+        elif "_ns.o" in layout:
             record_sw_type = "NSPE"
         else:
             record_sw_type = "NSPE_SPE"
@@ -128,11 +129,15 @@ def wrap(key, align, version, header_size, pad_header, layout, pad, confirm,
                               max_align=max_align)
 
     img.load(infile)
-    key = imgtool.main.load_key(key) if key else None
+    key = imgtool.main.load_key(key, passwd=key_pswd) if key else None
     enckey = imgtool.main.load_key(encrypt) if encrypt else None
     if enckey and key:
-        if (isinstance(key, imgtool.keys.RSA) and
-           not isinstance(enckey, imgtool.keys.RSAPublic)):
+        if ((isinstance(key, keys.ECDSA256P1) and
+             not isinstance(enckey, keys.ECDSA256P1Public))
+           or (isinstance(key, keys.ECDSA384P1) and
+               not isinstance(enckey, keys.ECDSA384P1Public))
+                or (isinstance(key, keys.RSA) and
+                    not isinstance(enckey, keys.RSAPublic))):
             # FIXME
             raise click.UsageError("Signing and encryption must use the same "
                                    "type of key")

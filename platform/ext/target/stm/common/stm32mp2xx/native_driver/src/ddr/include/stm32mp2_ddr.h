@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021-2024, STMicroelectronics - All Rights Reserved
  *
- * SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ * SPDX-License-Identifier: GPL-2.0-only OR BSD-3-Clause
  */
 
 #ifndef STM32MP2_DDR_H
@@ -19,8 +19,6 @@ uintptr_t stm32mp_ddrctrl_base(void);
 uintptr_t stm32mp_ddrphyc_base(void);
 /* Get DDRDBG peripheral IO memory base address */
 uintptr_t stm32_ddrdbg_get_base(void);
-/* Return the base address of the PWR peripheral */
-uintptr_t stm32mp_pwr_base(void);
 /* Return the base address of the RCC peripheral */
 uintptr_t stm32mp_rcc_base(void);
 

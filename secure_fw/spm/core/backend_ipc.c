@@ -14,6 +14,7 @@
 #include "config_spm.h"
 #include "critical_section.h"
 #include "compiler_ext_defs.h"
+#include "config_spm.h"
 #include "ffm/psa_api.h"
 #include "fih.h"
 #include "runtime_defs.h"
@@ -22,8 +23,10 @@
 #include "tfm_hal_isolation.h"
 #include "tfm_hal_platform.h"
 #include "tfm_nspm.h"
+#include "tfm_rpc.h"
 #include "ffm/backend.h"
 #include "utilities.h"
+#include "private/assert.h"
 #include "memory_symbols.h"
 #include "load/partition_defs.h"
 #include "load/service_defs.h"
@@ -39,6 +42,10 @@ struct partition_head_t partition_listhead;
 extern uintptr_t spm_boundary;
 #endif
 
+#if PLATFORM_HAS_NS_NOTIF
+extern uint32_t ns_evt_owned;
+#endif
+
 #ifdef CONFIG_TFM_USE_TRUSTZONE
 /* Instance for SPM_THREAD_CONTEXT */
 struct context_ctrl_t *p_spm_thread_context;
@@ -52,7 +59,8 @@ ARCH_CLAIM_CTXCTRL_INSTANCE(spm_thread_context,
 struct context_ctrl_t *p_spm_thread_context = &spm_thread_context;
 #endif
 
-#if (CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT == 1) && defined(CONFIG_TFM_USE_TRUSTZONE)
+#if ((CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT == 1) ||\
+     (CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT == 1)) && defined(CONFIG_TFM_USE_TRUSTZONE)
 static bool basepri_set_by_ipc_schedule;
 #endif
 
@@ -94,7 +102,20 @@ static uint32_t query_state(struct thread_t *p_thrd, uint32_t *p_retval)
         if ((retval_signals ==  ASYNC_MSG_REPLY) &&
             ((p_pt->signals_allowed & ASYNC_MSG_REPLY) != ASYNC_MSG_REPLY)) {
             p_pt->signals_asserted &= ~ASYNC_MSG_REPLY;
-            *p_retval = (uint32_t)p_pt->reply_value;
+#ifndef NDEBUG
+            SPM_ASSERT(p_pt->p_replied->status < TFM_HANDLE_STATUS_MAX);
+#endif
+
+            /*
+             * For FF-M Secure Partition, the reply is synchronous and only one
+             * replied handle node should be mounted. Take the reply value from
+             * the node and delete it then.
+             */
+            *p_retval = (uint32_t)p_pt->p_replied->replied_value;
+            if (p_pt->p_replied->status == TFM_HANDLE_STATUS_TO_FREE) {
+                spm_free_connection(p_pt->p_replied);
+            }
+            p_pt->p_replied = NULL;
         } else {
             *p_retval = retval_signals;
         }
@@ -189,16 +210,16 @@ psa_status_t backend_messaging(struct connection_t *p_connection)
     p_owner = p_connection->service->partition;
     signal = p_connection->service->p_ldinf->signal;
 
-    UNI_LIST_INSERT_AFTER(p_owner, p_connection, p_handles);
+    UNI_LIST_INSERT_AFTER(p_owner, p_connection, p_reqs);
 
     /* Messages put. Update signals */
     ret = backend_assert_signal(p_owner, signal);
 
     /*
-     * If it is a NS request via RPC, it is unnecessary to block current
-     * thread.
+     * If it is a request from NS Mailbox Agent, it is NOT necessary to block
+     * the current thread.
      */
-    if (tfm_spm_is_rpc_msg(p_connection)) {
+    if (IS_NS_AGENT_MAILBOX(p_connection->p_client->p_ldinf)) {
         ret = PSA_SUCCESS;
     } else {
         signal = backend_wait_signals(p_connection->p_client, ASYNC_MSG_REPLY);
@@ -207,8 +228,6 @@ psa_status_t backend_messaging(struct connection_t *p_connection)
         }
     }
 
-    p_connection->status = TFM_HANDLE_STATUS_ACTIVE;
-
     return ret;
 }
 
@@ -216,21 +235,19 @@ psa_status_t backend_replying(struct connection_t *handle, int32_t status)
 {
     struct partition_t *client = handle->p_client;
 
-    if (tfm_spm_is_rpc_msg(handle)) {
-        /*
-         * Add to the list of outstanding responses.
-         * Note that we use the partition's p_handles pointer.
-         * This assumes that partitions using the agent API will process all requests
-         * asynchronously and will not also provide services of their own.
-         */
-        handle->reply_value = (uintptr_t)status;
-        handle->msg.rhandle = handle;
-        UNI_LIST_INSERT_AFTER(client, handle, p_handles);
-        return backend_assert_signal(handle->p_client, ASYNC_MSG_REPLY);
-    } else {
-        handle->p_client->reply_value = (uintptr_t)status;
-        return backend_assert_signal(handle->p_client, ASYNC_MSG_REPLY);
-    }
+    /* Prepare the replied handle. */
+    handle->replied_value = (uintptr_t)status;
+
+    /* Mount the replied handle. There are two mode for replying.
+     *
+     *  - For synchronous reply, only one node is mounted.
+     *  - For asynchronous reply, the first moundted is at the tail of the list
+     *    and will be first replied.
+     *    - Currently, this is used for mailbox multi-core technology.
+     */
+    UNI_LIST_INSERT_AFTER(client, handle, p_replied);
+
+    return backend_assert_signal(handle->p_client, ASYNC_MSG_REPLY);
 }
 
 extern void common_sfn_thread(void *param);
@@ -254,7 +271,8 @@ static thrd_fn_t partition_init(struct partition_t *p_pt,
         p_pt->signals_allowed |= ASYNC_MSG_REPLY;
     }
 
-    UNI_LISI_INIT_NODE(p_pt, p_handles);
+    UNI_LIST_INIT_NODE(p_pt, p_reqs);
+    UNI_LIST_INIT_NODE(p_pt, p_replied);
 
     if (IS_IPC_MODEL(p_pt->p_ldinf)) {
         /* IPC Partition */
@@ -295,6 +313,8 @@ static thrd_fn_t ns_agent_tz_init(struct partition_t *p_pt,
     (void)p_pt;
     (void)service_setting;
     (void)param;
+
+    return POSITION_TO_ENTRY(NULL, thrd_fn_t);
 }
 #endif
 
@@ -475,6 +495,18 @@ uint64_t ipc_schedule(uint32_t exc_return)
         __set_BASEPRI(SECURE_THREAD_EXECUTION_PRIORITY);
     }
 #endif
+#if (CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT == 1) && defined(CONFIG_TFM_USE_TRUSTZONE)
+    if (ns_called == 0) {
+        /*
+         * If ns_called is not set, that means an interrupt was taken when
+         * Non-Secure code was executing, and a scheduling is necessary because
+         * a secure partition become runnable.
+         */
+        SPM_ASSERT(!basepri_set_by_ipc_schedule);
+        basepri_set_by_ipc_schedule = true;
+        __set_BASEPRI(SECURE_THREAD_EXECUTION_PRIORITY);
+    }
+#endif
 
     p_curr_ctx = CURRENT_THREAD->p_context_ctrl;
 
@@ -515,7 +547,8 @@ uint64_t ipc_schedule(uint32_t exc_return)
         }
         ARCH_FLUSH_FP_CONTEXT();
 
-#if (CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT == 1) && defined(CONFIG_TFM_USE_TRUSTZONE)
+#if ((CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT == 1) ||\
+     (CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT == 1)) && defined(CONFIG_TFM_USE_TRUSTZONE)
         if (IS_NS_AGENT_TZ(p_part_next->p_ldinf)) {
             /*
              * The Non-Secure Agent for TrustZone is going to be scheduled.
@@ -544,6 +577,34 @@ uint64_t ipc_schedule(uint32_t exc_return)
         tfm_core_panic();
     }
     p_partition_metadata = (uintptr_t)(p_part_next->p_metadata);
+#if PLATFORM_HAS_NS_NOTIF
+    ns_evt_owned = p_part_next->p_ldinf->ns_evt_owned;
+#endif
+
+    /*
+     * ctx_ctrl is set from struct thread_t's p_context_ctrl, and p_part_curr
+     * and p_part_next are calculated from the thread pointer.
+     * struct partition_t's ctx_ctrl is pointed to by struct thread_t's p_context_ctrl,
+     * but the optimiser doesn't know that when building this code.
+     * Use that information to check that the context, thread, and partition
+     * are all consistent
+     */
+    if (ctx_ctrls.u32_regs.r0 != (uint32_t)&p_part_curr->ctx_ctrl) {
+        tfm_core_panic();
+    }
+
+    if (ctx_ctrls.u32_regs.r1 != (uint32_t)&p_part_next->ctx_ctrl) {
+        tfm_core_panic();
+    }
+
+    if (&p_part_next->thrd != CURRENT_THREAD) {
+        tfm_core_panic();
+    }
+
+    /* also double-check the metadata */
+    if ((uintptr_t)GET_CTX_OWNER(ctx_ctrls.u32_regs.r1)->p_metadata != p_partition_metadata) {
+        tfm_core_panic();
+    }
 
     CRITICAL_SECTION_LEAVE(cs);
 

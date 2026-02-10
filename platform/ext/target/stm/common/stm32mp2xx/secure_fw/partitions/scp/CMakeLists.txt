@@ -32,21 +32,26 @@ target_sources(tfm_partitions
         ${CMAKE_BINARY_DIR}/generated/secure_fw/partitions/scp/auto_generated/load_info_tfm_scp.c
 )
 
-set(SCP_LOG_LEVEL DISABLED)
+if (${TFM_SPM_LOG_LEVEL} STREQUAL TFM_SPM_LOG_LEVEL_SILENCE)
+    set(SCP_LOG_LEVEL DISABLED)
+else()
+    set(SCP_LOG_LEVEL ERROR)
+endif()
+
 set(SCP_ARCHITECTURE tfm)
 set(SCP_ENABLE_OVERRIDE_FIRMWARE_NAME OFF)
 set(SCP_FIRMWARE scmi-fw)
+set(SCP_SOURCE_DIR ${SCP_FW_PATH}/product/tfm-stm32mp2/fw)
 set(SCP_FIRMWARE_SOURCE_DIR ${SCP_FW_PATH}/product/tfm-stm32mp2/fw)
 set(SCP_FIRMWARE_BINARY_DIR ${CMAKE_BINARY_DIR}/scp)
 set(SCP_FIRMWARE_TARGET scmi-fw)
-set(SCP_FIRMWARE_SOURCE_ scmi-fw)
-set(SCP_TFM_DIR ${TFM_OS_PATH})
 set(CFG_CROSS_COMPILE arm-none-eabi)
 set(DISABLE_CPPCHECK ON)
 set(TARGET_FILE_DIR ${SCP_FW_PATH})
+set(SCP_TFM_DIR ${CMAKE_SOURCE_DIR})
 set(CMAKE_SOURCE_DIR ${SCP_SOURCE_DIR})
-set(SCP_TFM_DIR ${STM_DIR}/../../../../)
-set(SCP_TFM_PLAT_DIR ${STM_FAMILLY_DIR})
+
+set(SCP_TFM_PLAT_DIR ${STM_FAMILY_DIR})
 add_subdirectory(${SCP_FW_PATH} scmi-fw)
 add_dependencies(scmi-fw dt_platform_s_gen_h)
 
@@ -65,7 +70,7 @@ target_compile_definitions(scmi-fw
    CFG_SCPFW_MOD_VOLTAGE_DOMAIN
    CFG_SCPFW_MOD_CLOCK
    $<$<BOOL:${CFG_SCPFW_MOD_POWER_DOMAIN}>:CFG_SCPFW_MOD_POWER_DOMAIN>
-   $<$<BOOL:${CFG_SCPFW_MOD_POWER_DOMAIN}>:CFG_SCPFW_MOD_SCMI_POWER_DOMAIN>
+   $<$<BOOL:${CFG_SCPFW_MOD_SCMI_SYSTEM_POWER}>:CFG_SCPFW_MOD_SCMI_SYSTEM_POWER>
    CFG_SCPFW_MOD_TFM_CONSOLE
    CFG_SCPFW_MOD_MSG_SMT
 )
@@ -86,7 +91,7 @@ target_compile_definitions(framework
    CFG_SCPFW_MOD_VOLTAGE_DOMAIN
    CFG_SCPFW_MOD_CLOCK
    $<$<BOOL:${CFG_SCPFW_MOD_POWER_DOMAIN}>:CFG_SCPFW_MOD_POWER_DOMAIN>
-   $<$<BOOL:${CFG_SCPFW_MOD_POWER_DOMAIN}>:CFG_SCPFW_MOD_SCMI_POWER_DOMAIN>
+   $<$<BOOL:${CFG_SCPFW_MOD_SCMI_SYSTEM_POWER}>:CFG_SCPFW_MOD_SCMI_SYSTEM_POWER>
    CFG_SCPFW_MOD_TFM_CONSOLE
    CFG_SCPFW_MOD_MSG_SMT
 )
@@ -96,13 +101,13 @@ target_include_directories(tfm_psa_rot_partition_scp
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         ${CMAKE_BINARY_DIR}/generated/secure_fw/partitions/scp
         ${SCP_FW_PATH}/arch/none/tfm/include
-        ${STM_FAMILLY_DIR}/native_driver/src/clk
+        ${STM_FAMILY_DIR}/native_driver/src/clk
 
 )
 target_include_directories(tfm_partitions
     INTERFACE
         ${CMAKE_BINARY_DIR}/generated/secure_fw/partitions/scp
-        ${STM_FAMILLY_DIR}/native_driver/include
+        ${STM_FAMILY_DIR}/native_driver/include
 
 )
 

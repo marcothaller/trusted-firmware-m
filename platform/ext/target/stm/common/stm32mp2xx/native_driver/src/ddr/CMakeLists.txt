@@ -7,6 +7,8 @@
 cmake_minimum_required(VERSION 3.15)
 
 set(STM_DDR_DIR ${CMAKE_CURRENT_LIST_DIR})
+set(DDR_PHY_BIN_SRC_PATH "DOWNLOAD"     CACHE PATH   "Path to ddr phy binary (or DOWNLOAD to fetch automatically)")
+set(DDR_PHY_BIN_VERSION  "v1.0-stm32mp" CACHE STRING "The version of ddr phy binary to use")
 
 fetch_remote_library(
     LIB_NAME                ddr_phy_bin
@@ -78,6 +80,10 @@ find_package(Python3)
 set(BL2_SOURCE ${CMAKE_SOURCE_DIR}/bl2)
 set(API_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/api_ns)
 
+if (NOT EXISTS ${MUCBOOT_KEY_DDRFW})
+	set(MUCBOOT_KEY_DDRFW ${MCUBOOT_KEY_NS})
+endif()
+
 configure_file(signing_layout.c.in ${CMAKE_CURRENT_BINARY_DIR}/signing_layout.c @ONLY)
 add_library(signing_layout_for_ddr_phy OBJECT ${CMAKE_CURRENT_BINARY_DIR}/signing_layout.c)
 
@@ -106,7 +112,7 @@ add_custom_command(OUTPUT ddr_phy_signed.bin
 	COMMAND ${Python3_EXECUTABLE} ${BL2_SOURCE}/ext/mcuboot/scripts/wrapper/wrapper.py
 		-v ${DDR_IMAGE_VERSION}
 		--layout $<TARGET_OBJECTS:signing_layout_for_ddr_phy>
-		-k ${MCUBOOT_KEY_S}
+		-k ${MUCBOOT_KEY_DDRFW}
 		--public-key-format $<IF:$<BOOL:${MCUBOOT_HW_KEY}>,full,hash>
 		--align ${MCUBOOT_ALIGN_VAL}
                 --pad
@@ -122,3 +128,17 @@ add_custom_command(OUTPUT ddr_phy_signed.bin
 		${CMAKE_CURRENT_BINARY_DIR}/ddr_phy_signed.bin
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/ddr_phy_signed.bin $<TARGET_FILE_DIR:bl2>
 )
+
+# add signing_layout.o in build bin folder.
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ddrfw_signing_layout.o
+    COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_OBJECTS:signing_layout_for_ddr_phy>
+        ${CMAKE_CURRENT_BINARY_DIR}/ddrfw_signing_layout.o
+    DEPENDS signing_layout_for_ddr_phy
+)
+
+add_custom_target(copy_signing_layout ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ddrfw_signing_layout.o)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ddrfw_signing_layout.o
+        DESTINATION $<TARGET_FILE_DIR:bl2>/layout_files)

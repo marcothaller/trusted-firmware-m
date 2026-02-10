@@ -82,4 +82,35 @@ uint32_t tfm_hal_get_ns_entry_point(void);
 uint32_t tfm_hal_get_ns_MSP(void);
 #endif /* TFM_PARTITION_NS_AGENT_TZ */
 
+#ifdef PLATFORM_HAS_NS_NOTIF
+
+/**
+ * \brief Platform api to raise a ns interupt from secure
+ * \retval TFM_HAL_SUCCESS        when interrupt has been raised
+ *
+ * \retval Other code             interrupt not raised.
+ */
+uint32_t tfm_hal_raise_notify_ns(void);
+
+/**
+ * \brief  Platform api to initialise ns interrupt.
+ *
+ * \retval TFM_HAL_SUCCESS        Platform notify ns
+ *                                initialization succeeded.
+ * \retval Other code             Initialization failed.
+ */
+uint32_t tfm_hal_notify_ns_init(void);
+
+#endif /*  PLATFORM_HAS_NS_NOTIF */
+
+#ifdef PLATFORM_HAS_BOOTDATA
+/**
+ * \brief  Platform api to check platform boot data access policy
+ *
+ * \retval TFM_HAL_SUCCESS        Platform boot data access granted
+ * \retval Other code             No access.
+ */
+uint32_t tfm_hal_check_boot_data_access_policy(int32_t partition_id);
+#endif /*  PLATFORM_HAS_BOOTDATA */
+
 #endif /* __TFM_HAL_PLATFORM_H__ */

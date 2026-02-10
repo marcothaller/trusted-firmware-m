@@ -287,8 +287,10 @@ static const struct stm32_scmi_clkd scmi_dt_clocks_##n[] = {			\
 	(DT_INST_FOREACH_PROP_ELEM_SEP_VARGS(n, clk_list, CLK_ELE, (), n)),	\
 	())									\
 };										\
-static const struct stm32_scmi_regud scmi_dt_regus_##n[] = {			\
-	DT_INST_FOREACH_PROP_ELEM_SEP_VARGS(n, regu_list, REGU_ELE, (), n)	\
+static const struct stm32_scmi_regud scmi_dt_regus_##n[] = {                    \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, regu_list),			\
+	(DT_INST_FOREACH_PROP_ELEM_SEP_VARGS(n, regu_list, REGU_ELE, (), n)),	\
+	())									\
 };										\
 static struct clk plat_clk_##n[] = {						\
 	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, clk_list),				\
@@ -325,18 +327,18 @@ static const struct stm32_scmi_config stm32_scmi_cfg_##n = {			\
 	.dt_chan = &scmi_dt_chan_##n,						\
 	.dt_resets = scmi_dt_resets_##n,					\
 	.ndt_resets = _DT_INST_RST_LIST_NUM(n),				        \
-	.ndt_resets_max = DT_PROP_OR(DT_DRV_INST(n), rst_id_max, 0),		\
+	.ndt_resets_max = DT_INST_PROP_OR(n, rst_id_max, 0),			\
 	.dt_clocks = scmi_dt_clocks_##n,					\
 	.ndt_clocks = _DT_INST_CLK_LIST_NUM(n), 				\
-	.ndt_clocks_max =  DT_PROP_OR(DT_DRV_INST(n), clk_id_max, 0),		\
+	.ndt_clocks_max =  DT_INST_PROP_OR(n, clk_id_max, 0),			\
 	.dt_regus  = scmi_dt_regus_##n,						\
 	.ndt_regus = ARRAY_SIZE(scmi_dt_regus_##n),				\
-	.ndt_regus_max = DT_INST_PROP(n, regu_id_max),				\
+	.ndt_regus_max = DT_INST_PROP_OR(n, regu_id_max, 0),			\
 	.dt_pd = scmi_dt_pd_##n,						\
 	.ndt_pd = _DT_INST_PD_LIST_NUM(n),					\
-	.ndt_pd_max =  DT_PROP_OR(DT_DRV_INST(n), pd_id_max, 0),		\
+	.ndt_pd_max =  DT_INST_PROP_OR(n, pd_id_max, 0),			\
 };										\
-DEVICE_DT_INST_DEFINE(n ,&stm32_scmi_init,					\
+DEVICE_DT_INST_DEFINE(n ,&stm32_scmi_init, NULL,				\
 		      &plat_clk_##n[0],						\
 		      &stm32_scmi_cfg_##n,					\
 		      CORE, 30,							\
@@ -367,7 +369,7 @@ struct scpfw_config *scmi_scpfw_get_configuration(void)
 	return &scpfw_cfg;
 }
 static const char dummy[]="";
-extern int scp_com_init(const struct mbox_dt_spec *chan, void *user_data);
+extern int scp_com_init(const struct mbox_dt_spec *chan, const int agent_id);
 
 int32_t scmi_scpfw_cfg_early_init(void)
 {
@@ -393,7 +395,7 @@ int32_t scmi_scpfw_cfg_early_init(void)
 			/*  smt module  */
 			channel_cfg->shm.area = scmi_cfg[i]->dt_shm->area;
 			channel_cfg->shm.size = scmi_cfg[i]->dt_shm->size;
-			if (scp_com_init(scmi_cfg[i]->dt_chan, (void *)scmi_cfg[i]->dt_agent_id))
+			if (scp_com_init(scmi_cfg[i]->dt_chan, scmi_cfg[i]->dt_agent_id))
 				psa_panic();
 			channel_cfg->chan_mbx = (void *)(scmi_cfg[i]->dt_chan);
 		}
@@ -516,10 +518,10 @@ static int32_t scmi_scpfw_cfg_init_agent(const struct stm32_scmi_config *agent)
 			const struct device *dev = agent->dt_regus[j].regu_dev;
 			bool enabled = false;
 			assert(agent->dt_regus[j].scmi_id < agent->ndt_regus_max);
-			if (regulator_enable(dev))
-				LOG_INFFMT("\r\nFailed to enable SCMI regul %d\r\n",agent->dt_regus[j].scmi_id);
-			else
+
+			if (regulator_common_is_init_enabled(dev))
 				enabled = true;
+
 			if (!agent->dt_regus[j].regu_dev->name)
 				psa_panic();
 

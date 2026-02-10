@@ -25,6 +25,7 @@
 #define HW_IDLE_PERIOD			0x3U
 
 static enum stm32mp2_ddr_sr_mode saved_ddr_sr_mode;
+static uint32_t saved_sem_mutex;
 
 static void set_qd1_qd3_update_conditions(struct stm32mp_ddrctl *ctl)
 {
@@ -234,10 +235,14 @@ bool is_ddr_cid_filtering_enabled(void)
 void ddr_enable_cid_filtering(void)
 {
 	mmio_setbits_32(stm32mp_rcc_base() + RCC_R104CIDCFGR, RCC_RxCIDCFGR_CFEN);
+	if (saved_sem_mutex != 0U) {
+		mmio_setbits_32(stm32mp_rcc_base() + RCC_R104SEMCR, RCC_RxSEMCR_SEM_MUTEX);
+	}
 }
 
 void ddr_disable_cid_filtering(void)
 {
+	saved_sem_mutex = mmio_read_32(stm32mp_rcc_base() + RCC_R104SEMCR) & RCC_RxSEMCR_SEM_MUTEX;
 	mmio_clrbits_32(stm32mp_rcc_base() + RCC_R104CIDCFGR, RCC_RxCIDCFGR_CFEN);
 }
 
@@ -299,7 +304,7 @@ static int sr_ssr_entry(bool standby)
 		if (cid_filtering) {
 			ddr_disable_cid_filtering();
 		}
-		mmio_clrbits_32(stm32mp_pwr_base() + _PWR_CR11, _PWR_CR11_DDRRETDIS);
+		stm32_pwr_ddr_retention_set(stm32_pwr_dev(), true);
 		if (cid_filtering) {
 			ddr_enable_cid_filtering();
 		}
@@ -530,7 +535,7 @@ void ddr_sub_system_clk_off(void)
 	if (cid_filtering) {
 		ddr_disable_cid_filtering();
 	}
-	mmio_clrbits_32(stm32mp_pwr_base() + _PWR_CR11, _PWR_CR11_DDRRETDIS);
+	stm32_pwr_ddr_retention_set(stm32_pwr_dev(), true);
 	if (cid_filtering) {
 		ddr_enable_cid_filtering();
 	}

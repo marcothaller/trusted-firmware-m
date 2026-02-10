@@ -47,8 +47,8 @@
 #define IMAGE_NS_DATA_SIZE		DT_REG_SIZE(DT_NODELABEL(cm33_cube_data))
 
 #if STM32_M33TDCID
-#define BL2_DATA_START			DT_REG_ADDR(DT_NODELABEL(cm33_sram1))
-#define BL2_DATA_SIZE			(DT_REG_SIZE(DT_NODELABEL(cm33_sram1)) - \
+#define BL2_DATA_START			DT_REG_ADDR(DT_NODELABEL(bl2_data))
+#define BL2_DATA_SIZE			(DT_REG_SIZE(DT_NODELABEL(bl2_data)) - \
 					 BL2_MSP_STACK_SIZE)
 #define BL2_DATA_LIMIT			(BL2_DATA_START + BL2_DATA_SIZE - 1)
 #define BL2_MSP_STACK_START		(BL2_DATA_START + BL2_DATA_SIZE)
@@ -61,26 +61,9 @@
  */
 #define S_CODE_VECTOR_TABLE_SIZE ((320 + 16) * 4)
 
-/* Alias definitions for secure and non-secure areas*/
-#define S_RETRAM_ALIAS(x)		S_RETRAM_ALIAS_BASE + (x)
-#define NS_RETRAM_ALIAS(x)		NS_RETRAM_ALIAS_BASE + (x)
-
-#define S_SRAM1_ALIAS(x)		S_SRAM1_ALIAS_BASE + (x)
-#define NS_SRAM1_ALIAS(x)		NS_SRAM1_ALIAS_BASE + (x)
-
-#define S_SRAM2_ALIAS(x)		S_SRAM2_ALIAS_BASE + (x)
-#define NS_SRAM2_ALIAS(x)		NS_SRAM2_ALIAS_BASE + (x)
-
-#define S_SYSRAM_ALIAS(x)		S_SYSRAM_ALIAS_BASE + (x)
-#define NS_SYSRAM_ALIAS(x)		NS_SYSRAM_ALIAS_BASE + (x)
-
-#define S_BKPSRAM_ALIAS(x)		S_BKPSRAM_ALIAS_BASE + (x)
-#define NS_BKPSRAM_ALIAS(x)		NS_BKPSRAM_ALIAS_BASE + (x)
-
 /* Non-Secure not aliased, managed by SAU */
 #define NS_DDR_ALIAS(x)			NS_DDR_ALIAS_BASE + (x)
 #define NS_OSPI_MEM_ALIAS(x)		OSPI_MEM_BASE + (x)
-#define NS_REMAP_ALIAS(area, x)		(NS_REMAP##area##_ALIAS_BASE + (x))
 
 /* Image load address used by imgtool.py */
 #define S_IMAGE_LOAD_ADDRESS		DDR_CAHB_ALIAS(DDR_CAHB_OFFSET)
@@ -109,14 +92,6 @@
 #define S_CODE_START			DDR_CAHB_ALIAS(S_IMAGE_RAM_OFFSET + BL2_HEADER_SIZE)
 #define S_CODE_SIZE			(IMAGE_S_CODE_SIZE - BL2_HEADER_SIZE)
 #define S_CODE_LIMIT			(S_CODE_START + S_CODE_SIZE - 1)
-/* SCMI SHMEM */
-#if STM32_M33TDCID
-#define S_SCMI_ADDR			DT_REG_ADDR(DT_NODELABEL(scmi_cid1_ns))
-#define S_SCMI_SIZE			DT_REG_SIZE(DT_NODELABEL(scmi_cid1_ns))
-#else
-#define S_SCMI_ADDR			DT_REG_ADDR(DT_NODELABEL(scmi_cid2_ns))
-#define S_SCMI_SIZE			DT_REG_SIZE(DT_NODELABEL(scmi_cid2_ns))
-#endif
 
 /* Non-secure regions */
 #define NS_CODE_START			(DDR_CAHB_ALIAS(NS_IMAGE_RAM_OFFSET))
@@ -138,18 +113,14 @@
 
 /* Bootloader regions */
 /* On stm32mp2 the bl2 is loaded in retram by bootrom */
-#define BL2_CODE_OFFSET			0x0
-#define BL2_CODE_START			(S_RETRAM_ALIAS(BL2_CODE_OFFSET))
-#define BL2_CODE_SIZE			FLASH_AREA_BL2_SIZE - BL2_OTP_AREA_SIZE
+#define BL2_CODE_START			DT_REG_ADDR(DT_NODELABEL(bl2_code))
+#define BL2_CODE_SIZE			DT_REG_SIZE(DT_NODELABEL(bl2_code))
 #define BL2_CODE_LIMIT			(BL2_CODE_START + BL2_CODE_SIZE - 1)
-#define BL2_OTP_AREA_OFFSET		BL2_CODE_OFFSET + BL2_CODE_SIZE
-#define BL2_OTP_AREA_BASE		(S_RETRAM_ALIAS(BL2_OTP_AREA_OFFSET))
-#define BL2_OTP_AREA_SIZE		(0x0000)
 
 #define STM32MP_DDR_FW_BASE		(DDR_FW_DEST_ADDR + BL2_HEADER_SIZE)
 #define STM32MP_DDR_FW_DMEM_OFFSET	0x400U
 #define STM32MP_DDR_FW_IMEM_OFFSET	0x800U
-#define STM32MP_DDR_FW_MAX_SIZE		0x8800U
+#define STM32MP_DDR_FW_MAX_SIZE		DDR_FW_SIZE
 
 #define STM32MP_CA35_FW_MAX_SIZE	0x20000U
 
@@ -164,7 +135,5 @@
 #define BOOT_TFM_SHARED_DATA_SIZE	(0x0)
 #define BOOT_TFM_SHARED_DATA_LIMIT	(BOOT_TFM_SHARED_DATA_BASE)
 #endif
-#if STM32_M33TDCID
-#define IPCC_IRQ			DT_IRQ(DT_NODELABEL(ipcc1), irq)
-#endif
+
 #endif /* __REGION_DEFS_H__ */

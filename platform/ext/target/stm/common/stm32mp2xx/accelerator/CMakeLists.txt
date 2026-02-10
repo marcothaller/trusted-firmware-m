@@ -10,13 +10,13 @@ if(BL2)
 
     target_sources(bl2_crypto_hw
         PUBLIC
-            ${STM_FAMILLY_DIR}/accelerator/stm32mp2.c
+            ${STM_FAMILY_DIR}/accelerator/stm32mp2.c
     )
 
     target_include_directories(bl2_crypto_hw
         PRIVATE
             ${STM_BOARD_DIR}/include
-            ${STM_FAMILLY_DIR}/accelerator
+            ${STM_FAMILY_DIR}/accelerator
     )
 
     target_link_libraries(bl2_crypto_hw
@@ -31,13 +31,14 @@ if(BL2)
     target_link_libraries(bl2_mbedcrypto
         PUBLIC
             bl2_crypto_hw
+            platform_bl2
             cmsis
     )
     target_include_directories(bl2_mbedcrypto
         PUBLIC
             ${STM_BOARD_DIR}/include
-            ${STM_FAMILLY_DIR}/accelerator
-            ${STM_FAMILLY_DIR}/native_driver/include
+            ${STM_FAMILY_DIR}/accelerator
+            ${STM_FAMILY_DIR}/native_driver/include
     )
 
     target_link_libraries(bl2_mbedcrypto
@@ -49,7 +50,7 @@ endif()
 if(TFM_PARTITION_CRYPTO)
     target_sources(crypto_service_crypto_hw
         PRIVATE
-            ${STM_FAMILLY_DIR}/accelerator/stm32mp2.c
+            ${STM_FAMILY_DIR}/accelerator/stm32mp2.c
     )
 
     target_include_directories(crypto_service_crypto_hw
@@ -57,18 +58,18 @@ if(TFM_PARTITION_CRYPTO)
             ${PLATFORM_DIR}/include
             ${CMAKE_BINARY_DIR}/generated
             ${CMAKE_SOURCE_DIR}/interface/include
-            ${STM_FAMILLY_DIR}/accelerator
+            ${STM_FAMILY_DIR}/accelerator
     )
     target_include_directories(crypto_service_mbedcrypto
         PUBLIC
             ${PLATFORM_DIR}/include
             ${STM_BOARD_DIR}/include
-            ${STM_FAMILLY_DIR}/accelerator
+            ${STM_FAMILY_DIR}/accelerator
     )
 
     target_include_directories(psa_crypto_config
         INTERFACE
-            $<BUILD_INTERFACE:${STM_FAMILLY_DIR}/accelerator/>
+            $<BUILD_INTERFACE:${STM_FAMILY_DIR}/accelerator/>
     )
 
     target_link_libraries(crypto_service_crypto_hw

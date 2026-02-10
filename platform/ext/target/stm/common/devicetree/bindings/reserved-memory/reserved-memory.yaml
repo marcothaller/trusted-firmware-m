@@ -1,4 +1,4 @@
-# Copyright (c) 2023, STMicroelectronics
+# Copyright (c) 2023-2025, STMicroelectronics
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
@@ -27,7 +27,19 @@ properties:
     type: int
     const: 0
 
+  arm,sau-nsc:
+    type: boolean
+    description: |
+      Add this property if the SAU region is Non-secure callable.
+      Controls whether Non-secure state is permitted to execute a Secure Gateway
+      instruction from this region.
+
   st,protreg:
     type: array
     description: |
       protection value of rif peripherals, each entry is defined by a 32 bit.
+
+  memory-region:
+    type: phandle-array
+    specifier-space: memory-region
+    description: List of memory region phandles

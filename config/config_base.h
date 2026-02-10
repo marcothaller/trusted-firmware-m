@@ -111,6 +111,16 @@
 #define CRYPTO_SINGLE_PART_FUNCS_DISABLED      0
 #endif
 
+/*
+ * The service assumes that the client interface and internal
+ * interface towards the library that provides the PSA Crypto
+ * core component maintain the same ABI. This is not the default
+ * when using the Mbed TLS reference implementation
+ */
+#ifndef CRYPTO_LIBRARY_ABI_COMPAT
+#define CRYPTO_LIBRARY_ABI_COMPAT (0)
+#endif
+
 /* The stack size of the Crypto Secure Partition */
 #ifndef CRYPTO_STACK_SIZE
 #define CRYPTO_STACK_SIZE                      0x1B00
@@ -197,6 +207,11 @@
 #define TFM_ITS_AUTH_TAG_LENGTH                16
 #endif
 
+/* The size of the key used when authentication/encryption of ITS files is enabled */
+#ifndef TFM_ITS_KEY_LENGTH
+#define TFM_ITS_KEY_LENGTH                16
+#endif
+
 /* The size of the nonce used when ITS file encryption is enabled */
 #ifndef TFM_ITS_ENC_NONCE_LENGTH
 #define TFM_ITS_ENC_NONCE_LENGTH               12
@@ -268,6 +283,16 @@
 /* Mask Non-Secure interrupts when executing in secure state. */
 #ifndef CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT
 #define CONFIG_TFM_SECURE_THREAD_MASK_NS_INTERRUPT 0
+#endif
+
+/* Mask Non-Secure interrupts when SLIH interupt is executing in secure state */
+/* Wihtout this flag, if  secure is interrupted by non secure during its
+ * execution  and non secure call a secure service, the secure context execution
+ * is not non secure agent , an error is trigger, with this api
+ * SECURE_MASK_NS_IRQ_PRIORITY must be defined, this value lets the non secure
+ * interrupt handler of a given priority  */
+#ifndef CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT
+#define CONFIG_TFM_SECURE_SLIH_MASK_NS_INTERRUPT 0
 #endif
 
 /* Enable OTP/NV_COUNTERS emulation in RAM */

@@ -12,27 +12,26 @@ cmake_policy(SET CMP0076 NEW)
 if(NOT DEFINED PLATFORM_DIR)
     set(PLATFORM_DIR ../../.. CACHE PATH "Path to plaform dir")
 endif()
-target_compile_definitions(platform_bl2
-    PRIVATE
-        CRYPTO_HW_ACCELERATOR
-        LEGACY_DRIVER_API_ENABLED
-)
 
 # mbedtls_accelerator_config.h is included from the profile config files and must
 # be visible in the platform_s always, due to the compilation of provisioning.c
 target_include_directories(platform_s
     PUBLIC
-        ${STM_FAMILLY_DIR}/accelerator
-)
-
-# Same for platform_bl2
-target_include_directories(platform_bl2
-    PUBLIC
-        ${STM_FAMILLY_DIR}/accelerator
+        ${STM_FAMILY_DIR}/accelerator
 )
 
 ################################ BL2 ###########################################
 if(BL2)
+    target_compile_definitions(platform_bl2
+        PRIVATE
+            CRYPTO_HW_ACCELERATOR
+            LEGACY_DRIVER_API_ENABLED
+    )
+
+    target_include_directories(platform_bl2
+        PUBLIC
+            ${STM_FAMILY_DIR}/accelerator
+    )
 
     set(STM_LIB_TARGET bl2_crypto_hw)
 
@@ -48,7 +47,7 @@ if(BL2)
             $<$<C_COMPILER_ID:ARMClang>:-Wno-unused-parameter>
     )
 endif()
-include(${STM_FAMILLY_DIR}/accelerator/CMakeLists.txt)
+include(${STM_FAMILY_DIR}/accelerator/CMakeLists.txt)
 
 if (TFM_PARTITION_CRYPTO)
     set(STM_LIB_TARGET crypto_service_crypto_hw)

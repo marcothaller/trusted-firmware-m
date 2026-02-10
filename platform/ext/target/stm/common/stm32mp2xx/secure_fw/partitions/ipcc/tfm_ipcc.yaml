@@ -17,10 +17,25 @@
     {
       "source": "IPCC_IRQ",
       "name": "IPCC",
+      "handling": "FLIH"
+    },
+    { "source": "IPCC_IRQ_LEGACY",
+      "name": "IPCC_LEGACY",
       "handling": "SLIH"
     }
   ],
-  "dependencies": [
+  "ns_evts": [
+    {
+      "name": "RSE"
+    },
+    {
+      "name": "SCMI_CA35"
+    },
+    {
+      "name": "SCMI_CA35_BL31"
+    }
+  ],
+ "dependencies": [
   "TFM_SCP_SERVICE",
   "TFM_MBOX_SERVICE"
   ]

@@ -6,6 +6,7 @@
  */
 #include <stdint.h>
 #include <stdbool.h>
+#include <lib/delay.h>
 #include <lib/utils_def.h>
 #include <lib/mmio.h>
 #include <lib/mmiopoll.h>
@@ -16,11 +17,16 @@
 #include <device.h>
 #include <firewall.h>
 #include <stm32mp2_pwr.h>
+#include <regulator.h>
 #include <remoteproc.h>
 #include <reset.h>
 #include <clk.h>
 #include <cmsis.h>
 #include <stm32_bsec3.h>
+#include <tfm_platform_system.h>
+#include <devicetree.h>
+#include <devicetree/nvmem.h>
+#include <nvmem.h>
 
 #define IRQ_INVALID	UINT32_MAX
 
@@ -44,12 +50,16 @@ struct stm32_rproc_config {
 	const uint32_t irq_ack;
 	const struct clock_control *clk_ctl;
 	int n_clk;
+	const struct device **regu;
+	int nb_regu;
 };
 
 struct stm32_rproc_data {
 	struct rproc_spec rproc;
 	bool running;
 	const struct stm32_rproc_variant *variant;
+	const struct device *rsc_tab_addr_dev;
+	const struct device *rsc_tab_size_dev;
 };
 
 static void stm32_rproc_running_set(const struct device *dev, bool running)
@@ -64,6 +74,46 @@ static bool stm32_rproc_running_get(const struct device *dev)
 	struct stm32_rproc_data *data = dev_get_data(dev);
 
 	return data->running;
+}
+
+static int stm32mp2_a35_regu(const struct device *dev)
+{
+	int i;
+	const struct stm32_rproc_config *cfg = dev_get_config(dev);
+	int nb_regu = cfg->nb_regu;
+	int32_t volt_uv;
+	int err;
+
+	for (i = 0; i < nb_regu; i++) {
+		err = regulator_force_disable(cfg->regu[i]);
+		if (err ) {
+			EMSG("[%s] regu force disable err: %d", cfg->regu[i]->name, err);
+			return err;
+		}
+	}
+
+	/* force default voltage */
+	for (i = 0; i < nb_regu; i++) {
+		if (!regulator_get_default_voltage(cfg->regu[i], &volt_uv)) {
+			err = regulator_set_voltage(cfg->regu[i], volt_uv, volt_uv);
+			if (err) {
+				EMSG("[%s] regu set voltage err: %d", cfg->regu[i]->name, err);
+				return err;
+			}
+		}
+	}
+	udelay(10000);
+
+	/* enable ALL regu */
+	for (i = 0; i < nb_regu; i++) {
+		err = regulator_force_enable(cfg->regu[i]);
+		if (err) {
+			EMSG("[%s] regu force enable err: %d", cfg->regu[i]->name, err);
+			return err;
+		}
+	}
+
+	return 0;
 }
 
 /*
@@ -91,6 +141,7 @@ static __unused int stm32mp2_a35_restore(const struct device *dev)
 		}
 	}
 
+#if defined(CONFIG_STM32MP25X_REVY)
 	/*
 	 * IAC workaround
 	 * clear and unmask:
@@ -100,6 +151,7 @@ static __unused int stm32mp2_a35_restore(const struct device *dev)
 	IAC->ICR[4] = (IAC_BIT(152) | IAC_BIT(155) | IAC_BIT(156));
 	IAC->IER[3] |= IAC_BIT(108);
 	IAC->IER[4] |= (IAC_BIT(152) | IAC_BIT(155) | IAC_BIT(156));
+#endif
 
 	/* restore clocks touched by bootrom */
 	for (i = 0, clock_ctl = cfg->clk_ctl; i < cfg->n_clk; i++, clock_ctl++) {
@@ -180,6 +232,12 @@ static __unused int stm32mp2_a35_start(const struct device *dev)
 			return err;
 	}
 
+	if (cfg->nb_regu) {
+		err = stm32mp2_a35_regu(dev);
+		if (err)
+			return err;
+	}
+
 	if (cfg->irq_ack != IRQ_INVALID) {
 		/* clear rising pending register */
 		EXTI1->RPR3 = BIT(1);
@@ -201,6 +259,7 @@ static __unused int stm32mp2_a35_start(const struct device *dev)
 		}
 	}
 
+#if defined(CONFIG_STM32MP25X_REVY)
 	/*
 	 * IAC workaround
 	 * mask:
@@ -208,6 +267,7 @@ static __unused int stm32mp2_a35_start(const struct device *dev)
 	 */
 	IAC->IER[3] &= ~(IAC_BIT(108));
 	IAC->IER[4] &= ~(IAC_BIT(152) | IAC_BIT(155) | IAC_BIT(156));
+#endif
 
 	/*  power up cpu, in case it is in standby */
 	err = reset_control_deassert(&cfg->rst_ctl);
@@ -296,6 +356,33 @@ int stm32_rproc_stop(struct rproc_spec *rproc)
 	return data->variant->stop_fn(rproc->dev);
 }
 
+static int _stm32_rproc_set_rsc_tab(const struct device *dev,
+				    uint32_t addr, uint32_t size)
+{
+	struct stm32_rproc_data *data = dev_get_data(dev);
+	int err;
+
+	err = nvmem_write_cell(data->rsc_tab_addr_dev, sizeof(uint32_t),
+			       (uint8_t *)&addr);
+	if (err < 0) {
+		return err;
+	}
+
+	err = nvmem_write_cell(data->rsc_tab_size_dev, sizeof(uint32_t),
+			       (uint8_t *)&size);
+	if (err < 0) {
+		return err;
+	}
+
+	return 0;
+}
+
+static int stm32_rproc_set_rsc_tab(struct rproc_spec *rproc,
+				   uint32_t addr, uint32_t size)
+{
+	return _stm32_rproc_set_rsc_tab(rproc->dev, addr, size);
+}
+
 static __unused int stm32_rproc_init(const struct device *dev)
 {
 	struct stm32_rproc_data *data = dev_get_data(dev);
@@ -303,6 +390,9 @@ static __unused int stm32_rproc_init(const struct device *dev)
 
 	if (data->variant->init_fn)
 		err = data->variant->init_fn(dev);
+
+	/* reset resource table tamp back-up registers */
+	_stm32_rproc_set_rsc_tab(dev, 0, 0);
 
 	rproc_init(dev, &data->rproc);
 
@@ -322,6 +412,7 @@ static struct remoteproc_driver_api stm32_rproc_api = {
 	.start = stm32_rproc_start,
 	.is_running = stm32_rproc_is_running,
 	.stop = stm32_rproc_stop,
+	.set_rsc_tab = stm32_rproc_set_rsc_tab,
 };
 
 #define DT_CLOCK_CONTROL_GET_BY_IDX(node_id, idx)					\
@@ -344,11 +435,25 @@ static struct remoteproc_driver_api stm32_rproc_api = {
 		    (DT_INST_IRQ_BY_NAME(n, name, cell)),			\
 		    (IRQ_INVALID))
 
+
+#define DT_NUM_REGU(_inst)							\
+	DT_INST_PROP_LEN_OR(_inst, regus, 0)
+
+#define _DT_REGU(_idx, _inst)							\
+	DEVICE_DT_GET(DT_INST_PHANDLE_BY_IDX(_inst, regus, _idx))
+
+#define DT_REGU(inst)								\
+	{									\
+		LISTIFY(DT_NUM_REGU(inst), _DT_REGU, (,), inst)			\
+	}
+
 #define STM32_RPROC_INIT(n, name, _variant, _irqhandler)			\
 										\
 DT_INST_ACCESS_CTRLS_DEFINE(n);							\
 										\
 static const struct clock_control clk_ctrl_##n[] = DT_INST_CLOCK_CONTROL(n);	\
+										\
+static const struct device *regu_##n[] = DT_REGU(n);				\
 										\
 static const struct stm32_rproc_config _##name##_cfg##n = {			\
 	.rst_ctl = DT_INST_RESET_CONTROL_GET(n),				\
@@ -357,10 +462,14 @@ static const struct stm32_rproc_config _##name##_cfg##n = {			\
 	.irq_ack = DT_INST_IRQ_BY_NAME_OR(n, ack, irq),				\
 	.clk_ctl = clk_ctrl_##n,						\
 	.n_clk = DT_INST_NUM_CLOCKS(n),						\
+	.regu =  regu_##n,							\
+	.nb_regu = DT_NUM_REGU(n),						\
 };										\
 										\
 static struct stm32_rproc_data _##name##_data##n = {				\
 	.variant = &_variant,							\
+	.rsc_tab_addr_dev = DT_INST_DEV_NVMEM(n, rsc_tab_addr),		\
+	.rsc_tab_size_dev = DT_INST_DEV_NVMEM(n, rsc_tab_size),		\
 };										\
 										\
 void _irqhandler(void)								\
@@ -369,7 +478,7 @@ void _irqhandler(void)								\
 		_variant.irq_handler(DEVICE_DT_INST_GET(n));			\
 }										\
 										\
-DEVICE_DT_INST_DEFINE(n, &stm32_rproc_init,					\
+DEVICE_DT_INST_DEFINE(n, &stm32_rproc_init, NULL,				\
 		      &_##name##_data##n, &_##name##_cfg##n,			\
 		      CORE, 9, &stm32_rproc_api);
 

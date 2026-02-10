@@ -88,6 +88,7 @@ struct regulator_driver_api {
 	regulator_list_voltage_t list_voltage;
 	regulator_set_voltage_t set_voltage;
 	regulator_get_voltage_t get_voltage;
+	regulator_get_voltage_t get_default_voltage;
 	regulator_set_current_limit_t set_current_limit;
 	regulator_get_current_limit_t get_current_limit;
 	regulator_set_mode_t set_mode;
@@ -105,6 +106,11 @@ struct regulator_driver_api {
 #define REGULATOR_ALWAYS_ON	BIT(0)
 /** Indicates regulator must be initialized ON */
 #define REGULATOR_BOOT_ON	BIT(1)
+/** Enables pull down mode. DT property: regulator-pull-down */
+#define REGULATOR_PULL_DOWN	BIT(2)
+/** Over current protection. DT property: regulator-over-current-protection */
+#define REGULATOR_OVER_CURRENT	BIT(3)
+
 /** Indicates if regulator must be enabled when initialized */
 #define REGULATOR_INIT_ENABLED  (REGULATOR_ALWAYS_ON | REGULATOR_BOOT_ON)
 
@@ -171,7 +177,12 @@ struct regulator_common_config {
 		.flags = ((DT_PROP_OR(node_id, regulator_always_on, 0U) *      \
 			   REGULATOR_ALWAYS_ON) |                              \
 			  (DT_PROP_OR(node_id, regulator_boot_on, 0U) *        \
-			   REGULATOR_BOOT_ON)),                                \
+			   REGULATOR_BOOT_ON) |                               \
+			  (DT_PROP_OR(node_id, regulator_pull_down, 0U) *      \
+			   REGULATOR_PULL_DOWN) |                              \
+			  (DT_PROP_OR(node_id,                                 \
+			   regulator_over_current_protection, 0U) *            \
+			   REGULATOR_OVER_CURRENT)),                           \
 	}
 
 /**
@@ -445,6 +456,36 @@ bool regulator_is_enabled(const struct device *dev);
 int regulator_disable(const struct device *dev);
 
 /**
+ * @brief Force Enable a regulator.
+ *
+ * Forcibly enable the regulator output voltage or current.
+ * NOTE: this will disable the regulator output even if no other consumer
+ * devices have it enabled.
+ *
+ * @param dev Regulator device instance
+ *
+ * @retval 0 If regulator has been successfully enabled.
+ * @retval -errno Negative errno in case of failure.
+ * @retval -ENOTSUP If regulator enablement can not be controlled.
+ */
+int regulator_force_enable(const struct device *dev);
+
+/**
+ * @brief Force Disable a regulator.
+ *
+ * Forcibly disable the regulator output voltage or current.
+ * NOTE: this will disable the regulator output even if other consumer
+ * devices have it enabled.
+ *
+ * @param dev Regulator device instance.
+ *
+ * @retval 0 If regulator has been successfully disabled.
+ * @retval -errno Negative errno in case of failure.
+ * @retval -ENOTSUP If regulator disablement can not be controlled.
+ */
+int regulator_force_disable(const struct device *dev);
+
+/**
  * @brief Obtain the number of supported voltage levels.
  *
  * Each voltage level supported by a regulator gets an index, starting from
@@ -543,6 +584,18 @@ int regulator_set_voltage(const struct device *dev, int32_t min_uv,
  */
  int regulator_get_voltage(const struct device *dev,
 			   int32_t *volt_uv);
+
+/**
+ * @brief Obtain default output voltage.
+ *
+ * @param dev Regulator device instance.
+ * @param[out] volt_uv Where configured output voltage will be stored.
+ *
+ * @retval 0 If successful
+ * @retval -ENOSYS If function is not implemented.
+ * @retval -errno In case of any other error.
+ */
+int regulator_get_default_voltage(const struct device *dev, int32_t *volt_uv);
 
 /**
  * @brief Set output current limit.

@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021-2025, STMicroelectronics - All Rights Reserved
  *
- * SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ * SPDX-License-Identifier: GPL-2.0-only OR BSD-3-Clause
  */
 #define DT_DRV_COMPAT st_stm32mp2_ddr
 
@@ -13,6 +13,7 @@
 #include <stm32mp_ddr_test.h>
 #include <stm32mp2_ddr.h>
 #include <stm32mp2_ddr_helpers.h>
+#include <stm32mp2_pwr.h>
 #include <lib/mmio.h>
 #include <lib/delay.h>
 
@@ -40,11 +41,6 @@ uintptr_t stm32mp_ddrctrl_base(void)
 uintptr_t stm32_ddrdbg_get_base(void)
 {
 	return DT_INST_REG_ADDR_BY_NAME(0, dbg);
-}
-
-uintptr_t stm32mp_pwr_base(void)
-{
-	return DT_REG_ADDR(DT_NODELABEL(pwr));
 }
 
 uintptr_t stm32mp_rcc_base(void)
@@ -103,22 +99,22 @@ int stm32mp_board_ddr_power_init(enum ddr_type ddr_type)
 	return regulator_enable(dev_vddq);
 
 #else
-	const struct device *dev_vpp, *dev_vdd, *dev_vref, *dev_vtt;
+	const struct device *dev_vpp, *dev_vref, *dev_vtt, *dev_vdd;
 	int err;
+
+	/*
+	 * LPDDR4 power on sequence is:
+	 * enable VPP_DDR
+	 * enable VREF_DDR
+	 * enable VPP_DDR
+	 * enable VDD_DDR
+	 */
 
 	dev_vpp = DT_INST_DEV_REGULATOR_SUPPLY(0, vpp);
 	if (!dev_vpp)
 		return -ENODEV;
 
 	err = regulator_common_set_min_voltage(dev_vpp);
-	if (err)
-		return err;
-
-	dev_vdd = DT_INST_DEV_REGULATOR_SUPPLY(0, vdd);
-	if (!dev_vdd)
-		return -ENODEV;
-
-	err = regulator_common_set_min_voltage(dev_vdd);
 	if (err)
 		return err;
 
@@ -130,6 +126,14 @@ int stm32mp_board_ddr_power_init(enum ddr_type ddr_type)
 	if (!dev_vtt)
 		return -ENODEV;
 
+	dev_vdd = DT_INST_DEV_REGULATOR_SUPPLY(0, vdd);
+	if (!dev_vdd)
+		return -ENODEV;
+
+	err = regulator_common_set_min_voltage(dev_vdd);
+	if (err)
+		return err;
+
 	err = regulator_enable(dev_vpp);
 	if (err)
 		return err;
@@ -137,15 +141,15 @@ int stm32mp_board_ddr_power_init(enum ddr_type ddr_type)
 	/* could be set via enable_ramp_delay on vpp_ddr */
 	udelay(2000);
 
-	err = regulator_enable(dev_vdd);
-	if (err)
-		return err;
-
 	err = regulator_enable(dev_vref);
 	if (err)
 		return err;
 
 	err = regulator_enable(dev_vtt);
+	if (err)
+		return err;
+
+	err = regulator_enable(dev_vdd);
 	if (err)
 		return err;
 
@@ -184,7 +188,7 @@ int stm32mp2_ddr_dt_init(void)
 		},
 		.ctl = (struct stm32mp_ddrctl *)DT_INST_REG_ADDR_BY_NAME(0, ctrl),
 		.phy = (struct stm32mp_ddrphy *)DT_INST_REG_ADDR_BY_NAME(0, phy),
-		.pwr = DT_REG_ADDR(DT_NODELABEL(pwr)),
+		.pwr = stm32_pwr_dev(),
 		.rcc = DT_REG_ADDR(DT_NODELABEL(rcc)),
 	};
 

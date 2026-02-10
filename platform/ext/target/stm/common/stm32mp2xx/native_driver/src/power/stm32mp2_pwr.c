@@ -10,20 +10,34 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <device.h>
 #include <debug.h>
+#include <device.h>
+#include <firewall.h>
 #include <lib/mmio.h>
 #include <lib/mmiopoll.h>
 #include <lib/utils_def.h>
+#include <pm/device.h>
+#include <pm/pm.h>
 #include <reset.h>
-#include <firewall.h>
 
 #include <stm32mp2_pwr.h>
 #include <stm32_rif.h>
 /* Necessary to detect cold boot case */
 #include <cmsis.h>
 
+/* Default value for STM32MP25 with STPMIC25, defined in AN5727 */
+#define DEFAULT_POPL_D1			3U
+#define DEFAULT_PODH_D2			1U
+#define DEFAULT_POPL_D2			2U
+#define DEFAULT_LPCFG_D2		1U	/* PWR_ON=0 for Standby1/2 = PMIC_PWRCTRL1 */
+#define DEFAULT_LPLVDLY_D2		0U	/* 6xLSI cycle = 187 us */
+
 /* PWR offset register */
+#define _PWR_CR11			U(0x028)
+#define _PWR_BDCR1			U(0x038)
+#define _PWR_CPU2CR			U(0x044)
+#define _PWR_D1CR			U(0x04C)
+#define _PWR_D2CR			U(0x050)
 #define _PWR_RSECCFGR			U(0x100)
 #define _PWR_RPRIVCFGR			U(0x104)
 #define _PWR_RCIDCFGR			U(0x108)
@@ -31,6 +45,29 @@
 #define _PWR_WIOPRIVCFGR		U(0x184)
 #define _PWR_WIOCIDCFGR			U(0x188)
 #define _PWR_WIOSEMCR			U(0x18C)
+
+/* PWR_CR11 register fields */
+#define _PWR_CR11_DDRRETDIS		BIT(0)
+
+/* PWR_BDCR1 register fields */
+#define _PWR_BDCR1_DBD3P		BIT(0)
+
+/* PWR_CPU2CR register bitfields */
+#define _PWR_CPU2CR_CSSF		BIT(9)
+
+/* PWR_D1CR register fields */
+#define _PWR_D1CR_POPL_D1_MASK		GENMASK(12, 8)
+#define _PWR_D1CR_POPL_D1_SHIFT		8
+
+/* PWR_D2CR register fields */
+#define _PWR_D2CR_LPCFG_D2_MASK		BIT(0)
+#define _PWR_D2CR_LPCFG_D2_SHIFT	0
+#define _PWR_D2CR_POPL_D2_MASK		GENMASK(12, 8)
+#define _PWR_D2CR_POPL_D2_SHIFT		8
+#define _PWR_D2CR_LPLVDLY_D2_MASK	GENMASK(18, 16)
+#define _PWR_D2CR_LPLVDLY_D2_SHIFT	16
+#define _PWR_D2CR_PODH_D2_MASK		GENMASK(27, 24)
+#define _PWR_D2CR_PODH_D2_SHIFT		24
 
 // RCIDCFGR register bitfields
 #define _RCIDCFGR_CFEN_MASK		BIT(0)
@@ -75,56 +112,29 @@ struct stm32mp2_pwr_config {
 	uintptr_t base;
 	const struct reset_control rst_ctl_bck;
 	const struct rifprot_controller *rif_ctl;
+	uint32_t popl_d1_ms;
+	uint32_t podh_d2_ms;
+	uint32_t popl_d2_ms;
+	uint32_t lpcfg_d2;
+	uint32_t lplvdly_d2;
 };
 
-/*
- * FIXME
- * must be reworked when we use copro service and power
- */
-/*static uint32_t _cpux_base(uint32_t cpu)*/
-/*{*/
-/*        uint32_t offset = _PWR_CPU1D1SR;*/
+bool stm32_pwr_ddr_retention_get(const struct device *dev)
+{
+	const struct stm32mp2_pwr_config *dev_cfg = dev_get_config(dev);
+	uintptr_t base = dev_cfg->base;
 
-/*        if (cpu < _PWR_CPU_MIN || cpu > _PWR_CPU_MAX)*/
-/*                return 0;*/
+	return !(mmio_read_32(base + _PWR_CR11) & _PWR_CR11_DDRRETDIS);
+}
 
-/*        offset += sizeof(uint32_t) * (cpu - _PWR_CPU_MIN);*/
-/*        return pdata.base + offset;*/
-/*}*/
+void stm32_pwr_ddr_retention_set(const struct device *dev, bool enable)
+{
+	const struct stm32mp2_pwr_config *dev_cfg = dev_get_config(dev);
+	uintptr_t base = dev_cfg->base;
 
-/*static int _cpu_state(uint32_t cpu, uint32_t *state)*/
-/*{*/
-/*        uint32_t cpux_base;*/
-
-/*        cpux_base = _cpux_base(cpu);*/
-/*        if (!cpux_base) {*/
-/*                IMSG("cpu:%d not valid");*/
-/*                return -1;*/
-/*        }*/
-
-/*        *state = mmio_read_32(cpux_base);*/
-/*        return 0;*/
-/*}*/
-
-/*enum c_state stm32_pwr_cpu_get_cstate(uint32_t cpu)*/
-/*{*/
-/*        uint32_t state;*/
-
-/*        if (_cpu_state(cpu, &state))*/
-/*                return CERR;*/
-
-/*        return _FLD_GET(_PWR_CPUXDXSR_CSTATE, state);*/
-/*}*/
-
-/*enum d_state stm32_pwr_cpu_get_dstate(uint32_t cpu)*/
-/*{*/
-/*        uint32_t state;*/
-
-/*        if (_cpu_state(cpu, &state))*/
-/*                return DERR;*/
-
-/*        return _FLD_GET(_PWR_CPUXDXSR_DSTATE, state);*/
-/*}*/
+	mmio_clrsetbits_32(base + _PWR_CR11, _PWR_CR11_DDRRETDIS,
+			   enable ? 0 : _PWR_CR11_DDRRETDIS);
+}
 
 /*
  * There are two kinds of local resources in the PWR:
@@ -271,6 +281,19 @@ int stm32mp2_pwr_init(const struct device *dev)
 		if (err)
 			return err;
 	}
+#else
+	/* Initialize PWR register with low power configuration and delay */
+	mmio_write_32(dev_cfg->base + _PWR_D1CR,
+		      _FLD_PREP(_PWR_D1CR_POPL_D1, dev_cfg->popl_d1_ms));
+
+	mmio_write_32(dev_cfg->base + _PWR_D2CR,
+		      _FLD_PREP(_PWR_D2CR_LPCFG_D2, dev_cfg->lpcfg_d2) |
+		      _FLD_PREP(_PWR_D2CR_POPL_D2, dev_cfg->popl_d2_ms) |
+		      _FLD_PREP(_PWR_D2CR_LPLVDLY_D2, dev_cfg->lplvdly_d2) |
+		      _FLD_PREP(_PWR_D2CR_PODH_D2, dev_cfg->podh_d2_ms));
+
+	/* Clear the CPU2 status flags on boot */
+	io_setbits32(dev_cfg->base + _PWR_CPU2CR, _PWR_CPU2CR_CSSF);
 #endif
 
 	if (dev_cfg->rif_ctl)
@@ -299,6 +322,24 @@ static const struct firewall_controller_api stm32mp2_pwr_firewall_api = {
 	.set_conf = stm32mp2_pwr_rif_firewall_set_conf,
 	.release_conf = stm32mp2_pwr_rif_firewall_release_conf,
 };
+
+#ifdef CONFIG_PM_DEVICE
+static int stm32mp2_pwr_pm_action(const struct device *dev,
+				  enum pm_device_action action,
+				  uint32_t pm_hint)
+{
+	const struct stm32mp2_pwr_config *dev_cfg = dev_get_config(dev);
+
+	if (!PM_HINT_IS_STATE(pm_hint, CONTEXT))
+		return 0;
+
+	if (action == PM_DEVICE_ACTION_RESUME)
+		if (dev_cfg->rif_ctl)
+			return stm32_rifprot_init(dev_cfg->rif_ctl);
+
+	return 0;
+}
+#endif
 
 /*
  * FIXME:
@@ -332,9 +373,16 @@ static const struct stm32mp2_pwr_config stm32mp2_pwr_cfg_##n = {	\
 	.base = DT_INST_REG_ADDR(n),					\
 	.rst_ctl_bck = DT_INST_RESET_CONTROL_GET(n),			\
 	.rif_ctl = DT_INST_RIFPROT_CTRL_GET(n),				\
+	.popl_d1_ms = DT_PROP_OR(n, st_popl_d1_ms, DEFAULT_POPL_D1),	\
+	.podh_d2_ms = DT_PROP_OR(n, st_podh_d2_ms, DEFAULT_PODH_D2),	\
+	.popl_d2_ms = DT_PROP_OR(n, st_popl_d2_ms, DEFAULT_POPL_D2),	\
+	.lpcfg_d2 = DT_PROP_OR(n, st_lpcfg_d2, DEFAULT_LPCFG_D2),	\
+	.lplvdly_d2 = DT_PROP_OR(n, st_lplvdly_d2, DEFAULT_LPLVDLY_D2),\
 };									\
 									\
-DEVICE_DT_INST_DEFINE(n, &stm32mp2_pwr_init,				\
+PM_DEVICE_DT_INST_DEFINE(n, stm32mp2_pwr_pm_action);			\
+									\
+DEVICE_DT_INST_DEFINE(n, &stm32mp2_pwr_init, PM_DEVICE_DT_INST_GET(n),	\
 		      NULL, &stm32mp2_pwr_cfg_##n,			\
 		      PRE_CORE, 1, &stm32mp2_pwr_firewall_api);
 

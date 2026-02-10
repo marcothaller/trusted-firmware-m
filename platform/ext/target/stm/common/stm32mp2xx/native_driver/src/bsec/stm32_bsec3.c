@@ -18,6 +18,8 @@
 #include <lib/mmiopoll.h>
 #include <lib/utils_def.h>
 #include <nvmem.h>
+#include <pm/device.h>
+#include <pm/pm.h>
 
 #include <stm32_bsec3.h>
 #include <tfm_plat_otp.h>
@@ -37,6 +39,8 @@
 #define _BSEC_OTPSR			U(0xE44)
 #define _BSEC_DBGMCR			U(0xE8C)
 #define _BSEC_AP_UNLOCK			U(0xE90)
+#define _BSEC_HDPLMSR			U(0xE94)
+#define _BSEC_HDPLMCR			U(0xE98)
 #define _BSEC_DBGACR			U(0xEAC)
 #define _BSEC_VERR			U(0xFF4)
 #define _BSEC_IPIDR			U(0xFF8)
@@ -60,16 +64,19 @@
 #define _BSEC_LOCKR_GWLOCK_MASK		BIT(0)
 
 /* BSEC_DENR register fields */
+#define _BSEC_DENR_DBG_FULL		GENMASK_32(11, 0)
+
 /* Compute DENR_RCODE (SECDED ECC) as HAMMING(17,12) with parity */
-#define PARITY_4BIT(x)		((((x) >> 3) ^ ((x) >> 2) ^ ((x) >> 1) ^ (x)) & 1)
-#define PARITY_12BIT(x)		PARITY_4BIT(((x) >> 8) ^ ((x) >> 4) ^ (x))
-#define _BSEC_DENR_RCODE(x)	(((PARITY_12BIT((x) & 0x800)) << 17) | \
-				 ((PARITY_12BIT((x) & 0x7f0)) << 16) | \
-				 ((PARITY_12BIT((x) & 0x78e)) << 15) | \
-				 ((PARITY_12BIT((x) & 0x66d)) << 14) | \
-				 ((PARITY_12BIT((x) & 0xd5b)) << 13) | \
-				 ((PARITY_12BIT((x) ^ 0xcb7)) << 12))
-#define BSEC_DENR_v(x) (_BSEC_DENR_RCODE((x) & DBG_FULL) | ((x) & DBG_FULL))
+#define PARITY_4BIT(x)			((((x) >> 3) ^ ((x) >> 2) ^ ((x) >> 1) ^ (x)) & 1)
+#define PARITY_12BIT(x)			PARITY_4BIT(((x) >> 8) ^ ((x) >> 4) ^ (x))
+#define _BSEC_DENR_RCODE(x)		(((PARITY_12BIT((x) & 0x800)) << 17) | \
+					 ((PARITY_12BIT((x) & 0x7f0)) << 16) | \
+					 ((PARITY_12BIT((x) & 0x78e)) << 15) | \
+					 ((PARITY_12BIT((x) & 0x66d)) << 14) | \
+					 ((PARITY_12BIT((x) & 0xd5b)) << 13) | \
+					 ((PARITY_12BIT((x) & 0xcb7)) << 12))
+#define BSEC_DENR_v(x)			(_BSEC_DENR_RCODE((x) & _BSEC_DENR_DBG_FULL) | \
+					 ((x) & _BSEC_DENR_DBG_FULL))
 
 /* BSEC_SR register fields */
 #define _BSEC_SR_HVALID_MASK		BIT(1)
@@ -85,6 +92,9 @@
 
 #define _HIDEUP_ERROR			(LOCK_SHADOW_R | LOCK_SHADOW_W | \
 					 LOCK_SHADOW_P | LOCK_ERROR)
+
+/* BSEC_HDPLMCR register fields */
+#define BSEC_HDPLMCR_INC_MAGIC		U(0x60B166E7)
 
 /* 32 bit by OTP bank in each register */
 #define _BSEC_OTP_BIT_MASK		GENMASK_32(4, 0)
@@ -106,7 +116,7 @@
  * which copies bsec otp to shadow memory.
  * must be aligned with [TDCID loader]stm32_bsec3 driver
  */
-#ifdef STM32MP215Cxx
+#ifdef STM32MP21xxxx
 #define STM32MP2_OTP_MAX_ID		363
 #define OTP_MAX_SIZE			(STM32MP2_OTP_MAX_ID + 1U)
 #else
@@ -118,9 +128,22 @@
 
 #define BSEC_VERR_1_2			U(0x00000012)
 
-/* Dummy value for ADAC emulation on BSEC_DBGMCR and BSEC_DBGACR */
-#define BSEC_DBGxCR_DUMMY_ADAC		U(0xb4b4b400)
-#define BSEC_AP_UNLOCK_DUMMY_ADAC	U(0x000000b4)
+#define HDPL_ARRAY_SIZE			U(4)
+
+static const uint8_t hdpl_array[HDPL_ARRAY_SIZE] = {0xB4, 0x51, 0x8A, 0x6F};
+
+/* BSEC_DBGMCR, BSEC_DBGACR, BSEC_AP_UNLOCK registers fields & constants */
+#define BSEC_AUTH_UNLOCK_MASK		GENMASK_32(15, 8)
+#define BSEC_AUTH_UNLOCK_SHIFT		8
+#define BSEC_AUTH_HDPL_MASK		GENMASK_32(23, 16)
+#define BSEC_AUTH_HDPL_SHIFT		16
+#define BSEC_AUTH_SEC_MASK		GENMASK_32(31, 24)
+#define BSEC_AUTH_SEC_SHIFT		24
+#define BSEC_AP_UNLOCK_MASK		GENMASK_32(7, 0)
+#define BSEC_AP_UNLOCK_SHIFT		0
+#define BSEC_AUTH_UNLOCKED		0xb4
+#define BSEC_AUTH_LOCKED		0xff
+#define BSEC_DBGxCR_NOT_SET		0x00000bad
 
 struct nvmem_cell {
 	const char *cell_label;
@@ -154,6 +177,7 @@ struct stm32_bsec_variant {
 	unsigned int oem_key_first_otp;
 	uint32_t denr_all_mask;
 	uint32_t denr_key;
+	bool has_hdpl;
 };
 
 struct stm32_bsec_data {
@@ -161,42 +185,11 @@ struct stm32_bsec_data {
 	bool hw_key_valid;
 	struct bsec_mirror *p_mirror;
 	uint32_t verr;
+	uint32_t dbgacr;
 };
 
 static const struct device *bsec_dev;
 
-static int bsec_get_semaphore(void)
-{
-	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
-	struct firewall_spec *firewall;
-	int i, ret;
-
-	for_each_firewall(drv_cfg->firewall_ctrls, firewall, drv_cfg->n_firewall_ctrls, i){
-		ret = firewall_acquire_access(firewall);
-		if(ret && ret != -ENODEV){
-			EMSG("Error aquire sem\n");
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static int bsec_release_semaphore(void)
-{
-	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
-	struct firewall_spec *firewall;
-	int i, ret;
-
-	for_each_firewall(drv_cfg->firewall_ctrls, firewall, drv_cfg->n_firewall_ctrls, i){
-		ret = firewall_release_access(firewall);
-		if(ret && ret != -ENODEV){
-			EMSG("Error release sem\n");
-			return ret;
-		}
-	}
-	return 0;
-}
 
 static bool is_bsec_write_locked(void)
 {
@@ -283,22 +276,15 @@ static int __maybe_unused stm32_bsec_read_otp(uint32_t *val, uint32_t otp)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	int ret, sem_ret;
+	int ret;
 
 	if (!val || otp > drv_data->variant->max_id)
 		return -EINVAL;
 
-	sem_ret = bsec_get_semaphore();
-	if (sem_ret)
-		return sem_ret;
 	*val = 0U;
 	ret = shadow_otp(bsec_dev, otp);
 	if (!ret)
 		*val = io_read32(drv_cfg->base + _BSEC_FVR(otp));
-
-	sem_ret = bsec_release_semaphore();
-	if (sem_ret)
-		return sem_ret;
 
 	return ret;
 }
@@ -314,112 +300,184 @@ static int __maybe_unused stm32_bsec_shadow_read_otp(uint32_t *val,
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	int sem_ret, ret = 0;
+	int ret = 0;
 
 	if (!val || otp > drv_data->variant->max_id)
 		return -EINVAL;
 
-	sem_ret = bsec_get_semaphore();
-	if (sem_ret)
-		return sem_ret;
 	*val = 0U;
 	if (!is_fuse_shadowed(otp))
 		ret = shadow_otp(bsec_dev, otp);
 	if (!ret)
 		*val = io_read32(drv_cfg->base + _BSEC_FVR(otp));
 
-	sem_ret = bsec_release_semaphore();
-	if (sem_ret)
-		return sem_ret;
-
 	return ret;
 }
 
 /*
  * bsec_write_otp: write value in BSEC data register.
- * val: value to write.
+ * value: value to write.
  * otp: OTP number.
  * return value: 0 if no error.
  */
-static int __maybe_unused stm32_bsec_write_otp(uint32_t val, uint32_t otp)
+static int __maybe_unused stm32_bsec_write_otp(uint32_t value, uint32_t otp)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	bool value = false;
-	int ret, sem_ret;
+	bool sw_lock = false;
+	int ret;
 
 	if (otp > drv_data->variant->max_id)
 		return -EINVAL;
 
-	sem_ret = bsec_get_semaphore();
-	if (sem_ret)
-		return sem_ret;
-
-	if (is_bsec_write_locked()){
-		ret = -EPERM;
-		goto err;
-	}
+	if (is_bsec_write_locked())
+		return -EPERM;
 
 	/* for HW shadowed OTP, update value in FVR register */
 	if (is_fuse_shadowed(otp)) {
-		ret = stm32_bsec_read_sw_lock(otp, &value);
+		ret = stm32_bsec_read_sw_lock(otp, &sw_lock);
 		if (ret)
-			goto err;
+			return ret;
 
-		if (value){
-			ret = -EPERM;
-			goto err;
-		}
+		if (sw_lock)
+			return -EPERM;
 
-		io_write32(drv_cfg->base + _BSEC_FVR(otp), val);
+
+		io_write32(drv_cfg->base + _BSEC_FVR(otp), value);
 	}
 
-	ret = 0;
-
-err:
-	sem_ret = bsec_release_semaphore();
-	if (sem_ret)
-		return sem_ret;
-
-	return ret;
+	return 0;
 }
 
-void stm32_bsec_write_debug_conf(uint32_t val)
+void stm32_bsec_parse_permissions(uint32_t perm_mask,
+				  uint32_t *dbg_en_val,
+				  uint32_t *dbg_a_ctrl_val,
+				  uint32_t *dbg_m_ctrl_val,
+				  uint32_t *ap_unlock)
+{
+	*dbg_en_val = 0;
+	*dbg_a_ctrl_val = 0;
+	*dbg_m_ctrl_val = 0;
+	*ap_unlock = 0;
+
+	/* TODO: manage ADAC_SOC_MASK (OTP 101) */
+
+	/* Prepare value for BSEC debug enable register */
+	if (!(perm_mask & STM32MP2_PERM_MASK_A35NSDDIS)) {
+		if (perm_mask & STM32MP2_PERM_MASK_A35NSTO)
+			*dbg_en_val |= BSEC_DENR_NIDENA;
+		if (perm_mask & STM32MP2_PERM_MASK_A35NSFD)
+			*dbg_en_val |= BSEC_DENR_NIDENA | BSEC_DENR_DBGENA;
+	}
+	if (!(perm_mask & STM32MP2_PERM_MASK_A35SDDIS)) {
+		if (perm_mask & STM32MP2_PERM_MASK_A35STO)
+			*dbg_en_val |= BSEC_DENR_SPNIDENA;
+		if (perm_mask & STM32MP2_PERM_MASK_A35SFD)
+			*dbg_en_val |= BSEC_DENR_SPNIDENA | BSEC_DENR_SPIDENA;
+	}
+	if (!(perm_mask & STM32MP2_PERM_MASK_M33NSDDIS)) {
+		if (perm_mask & STM32MP2_PERM_MASK_M33NSTO)
+			*dbg_en_val |= BSEC_DENR_NIDENM;
+		if (perm_mask & STM32MP2_PERM_MASK_M33NSFD)
+			*dbg_en_val |= BSEC_DENR_NIDENM | BSEC_DENR_DBGENM;
+	}
+	if (!(perm_mask & STM32MP2_PERM_MASK_M33SDDIS)) {
+		if (perm_mask & STM32MP2_PERM_MASK_M33STO)
+			*dbg_en_val |= BSEC_DENR_SPNIDENM;
+		if (perm_mask & STM32MP2_PERM_MASK_M33SFD)
+			*dbg_en_val |= BSEC_DENR_SPNIDENM | BSEC_DENR_SPIDENM;
+	}
+	if (*dbg_en_val != 0) /* At least one debug profile is enabled */
+		*dbg_en_val |= BSEC_DENR_DEVICEEN | BSEC_DENR_HDPEN | BSEC_DENR_DBGSWEN;
+
+	/* Prepare values for BSEC debug control registers */
+	if (IS_ENABLED(STM32MP21xxxx)) {
+		int8_t lvl = HDPL_ARRAY_SIZE - 1;
+
+		for (lvl = HDPL_ARRAY_SIZE - 1; lvl >= 0; lvl--) {
+			if (perm_mask & STM32MP21_PERM_MASK_A35HDP(lvl)) {
+				*dbg_a_ctrl_val |= _FLD_PREP(BSEC_AUTH_HDPL, hdpl_array[lvl]);
+				break;
+			}
+		}
+		for (lvl = HDPL_ARRAY_SIZE - 1; lvl >= 0; lvl--) {
+			if (perm_mask & STM32MP21_PERM_MASK_M33HDP(lvl)) {
+				*dbg_m_ctrl_val |= _FLD_PREP(BSEC_AUTH_HDPL, hdpl_array[lvl]);
+				break;
+			}
+		}
+
+		if (!(perm_mask & STM32MP2_PERM_MASK_A35NSDDIS))
+			*dbg_a_ctrl_val |= _FLD_PREP(BSEC_AUTH_UNLOCK, BSEC_AUTH_UNLOCKED);
+		if (!(perm_mask & STM32MP2_PERM_MASK_A35SDDIS))
+			*dbg_a_ctrl_val |= _FLD_PREP(BSEC_AUTH_SEC, BSEC_AUTH_UNLOCKED);
+		if (!(perm_mask & STM32MP2_PERM_MASK_M33NSDDIS))
+			*dbg_m_ctrl_val |= _FLD_PREP(BSEC_AUTH_UNLOCK, BSEC_AUTH_UNLOCKED);
+		if (!(perm_mask & STM32MP2_PERM_MASK_M33SDDIS))
+			*dbg_m_ctrl_val |= _FLD_PREP(BSEC_AUTH_SEC, BSEC_AUTH_UNLOCKED);
+
+		if ((_FLD_GET(BSEC_AUTH_UNLOCK, *dbg_a_ctrl_val) == BSEC_AUTH_UNLOCKED) ||
+		    (_FLD_GET(BSEC_AUTH_UNLOCK, *dbg_m_ctrl_val) == BSEC_AUTH_UNLOCKED))
+			/* At least one is unlocked, unlock the access port */
+			*ap_unlock = _FLD_PREP(BSEC_AP_UNLOCK, BSEC_AUTH_UNLOCKED);
+		else 	/* Both are locked, lock the access port */
+			*ap_unlock = _FLD_PREP(BSEC_AP_UNLOCK, BSEC_AUTH_LOCKED);
+	}
+
+	/* TODO: STM32MP2_PERM_MASK_WAITATTACH */
+}
+
+int stm32_bsec_write_debug_conf(uint32_t perm_mask)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	uint32_t masked_val = val & drv_data->variant->denr_all_mask;
-	int sem_ret;
+	uint32_t denr, dbgacr, dbgmcr, ap_unlock;
 
 	if (!IS_ENABLED(STM32_M33TDCID))
-		return;
+		return 0;
 
-	sem_ret = bsec_get_semaphore();
-	if (sem_ret)
-		return;
 	if (is_bsec_write_locked())
 		panic();
 
+	stm32_bsec_parse_permissions(perm_mask, &denr, &dbgacr, &dbgmcr, &ap_unlock);
+
+	denr &= drv_data->variant->denr_all_mask;
+
 	if (drv_data->verr >= BSEC_VERR_1_2)
-		masked_val = BSEC_DENR_v(masked_val);
+		denr = BSEC_DENR_v(denr);
 
 	mmio_write_32(drv_cfg->base + _BSEC_DENR,
-		      drv_data->variant->denr_key | masked_val);
+		      drv_data->variant->denr_key | denr);
+
+	if (mmio_read_32(drv_cfg->base + _BSEC_DENR) != (drv_data->variant->denr_key | denr))
+		return -EIO;
 
 	if (drv_data->verr >= BSEC_VERR_1_2) {
-		mmio_write_32(drv_cfg->base + _BSEC_DBGACR, BSEC_DBGxCR_DUMMY_ADAC);
-		mmio_write_32(drv_cfg->base + _BSEC_DBGMCR, BSEC_DBGxCR_DUMMY_ADAC);
-		mmio_write_32(drv_cfg->base + _BSEC_AP_UNLOCK, BSEC_AP_UNLOCK_DUMMY_ADAC);
+		mmio_write_32(drv_cfg->base + _BSEC_DBGACR, dbgacr);
+		mmio_write_32(drv_cfg->base + _BSEC_DBGMCR, dbgmcr);
+		mmio_write_32(drv_cfg->base + _BSEC_AP_UNLOCK, ap_unlock);
+
+		/*
+		 * Can't check the value of DBGACR, since Cortex-A may be under reset. The write
+		 * could have been ignored, but the value will be written later when the Cortex-A
+		 * starts.
+		 */
+		if (mmio_read_32(drv_cfg->base + _BSEC_DBGMCR) != dbgmcr)
+			return -EIO;
+		if (mmio_read_32(drv_cfg->base + _BSEC_AP_UNLOCK) != ap_unlock)
+			return -EIO;
+
+		drv_data->dbgacr = dbgacr;
 	}
 
-	bsec_release_semaphore();
+	return 0;
 }
 
 void stm32_bsec_restore_cortexa_debug_conf(void)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	int sem_ret;
+	uint32_t dbgacr = BSEC_DBGxCR_NOT_SET;
 
 	if (!IS_ENABLED(STM32_M33TDCID))
 		return;
@@ -427,13 +485,63 @@ void stm32_bsec_restore_cortexa_debug_conf(void)
 	if (drv_data->verr < BSEC_VERR_1_2)
 		return;
 
-	sem_ret = bsec_get_semaphore();
-	if (sem_ret)
+#if defined(DAUTH_NONE)
+	dbgacr = 0;
+#elif defined(DAUTH_NS_ONLY)
+	dbgacr = 0x00b4b400;
+#elif defined(DAUTH_FULL)
+	dbgacr = 0xb4b4b400;
+#elif defined(DAUTH_CHIP_DEFAULT)
+	dbgacr = drv_data->dbgacr;
+#endif
+
+	if (dbgacr == BSEC_DBGxCR_NOT_SET)
 		return;
 
-	mmio_write_32(drv_cfg->base + _BSEC_DBGACR, BSEC_DBGxCR_DUMMY_ADAC);
+	mmio_write_32(drv_cfg->base + _BSEC_DBGACR, dbgacr);
+}
 
-	bsec_release_semaphore();
+int stm32_bsec_increment_hdpl(void)
+{
+	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
+	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
+	uint32_t hdpl, hdpl_inc;
+	uint32_t i;
+
+	if (!drv_data->variant->has_hdpl)
+		return 0;
+
+	hdpl = io_read32(drv_cfg->base + _BSEC_HDPLMSR);
+	for (i = 0; i < HDPL_ARRAY_SIZE; i++) {
+		if (hdpl_array[i] == hdpl)
+			break;
+	}
+
+	if (i == HDPL_ARRAY_SIZE) {
+		EMSG("Unsupported HDPL value %x\n", hdpl);
+		return -EINVAL;
+	}
+
+	io_write32(drv_cfg->base + _BSEC_HDPLMCR, BSEC_HDPLMCR_INC_MAGIC);
+
+	if (i < HDPL_ARRAY_SIZE - 1)
+		i++;
+
+	hdpl_inc = io_read32(drv_cfg->base + _BSEC_HDPLMSR);
+	if (hdpl_inc != hdpl_array[i]) {
+		EMSG("Error fail to increment HDPL, %x but expecting %x\n",
+		     hdpl_inc, hdpl_array[i]);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+bool stm32_bsec_is_huk_ready(void)
+{
+	struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
+
+	return drv_data->hw_key_valid;
 }
 
 static inline int _otp_is_valid(uint32_t status)
@@ -512,7 +620,6 @@ int stm32_bsec_read_sw_lock(uint32_t otp, bool *value)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(bsec_dev);
 	const struct stm32_bsec_data *drv_data = dev_get_data(bsec_dev);
-	int sem_ret;
 
 	if (!value)
 		return -EINVAL;
@@ -526,15 +633,7 @@ int stm32_bsec_read_sw_lock(uint32_t otp, bool *value)
 		uint32_t bank = _FLD_GET(_BSEC_OTP_BANK, otp);
 		uint32_t mask = BIT(_FLD_GET(_BSEC_OTP_BIT, otp));
 
-		sem_ret = bsec_get_semaphore();
-		if (sem_ret)
-			return sem_ret;
-
 		*value = !!(io_read32(drv_cfg->base + _BSEC_SWLOCK(bank)) & mask);
-
-		sem_ret = bsec_release_semaphore();
-		if (sem_ret)
-			return sem_ret;
 	}
 
 	return 0;
@@ -642,6 +741,9 @@ static uint32_t init_state(const struct device *dev, uint32_t status)
 			if (mirror->otp[_OTP_SECURE_BOOT].value & _OTP_CLOSED_SECURE)
 				state = BSEC_STATE_SEC_CLOSED;
 		}
+
+		if (_FLD_GET(_BSEC_SR_HVALID, sr))
+			state |= BSEC_HARDWARE_KEY;
 	}
 
 	return state;
@@ -728,9 +830,6 @@ static void stm32_bsec_mirror_init(const struct device *dev, bool force_load)
 	struct bsec_mirror *mirror = drv_data->p_mirror;
 	uint32_t status;
 
-	if (bsec_get_semaphore())
-		return;
-
 	status = io_read32(drv_cfg->base + _BSEC_OTPSR);
 	stm32_bsec_check_error(status);
 
@@ -744,14 +843,13 @@ static void stm32_bsec_mirror_init(const struct device *dev, bool force_load)
 		EMSG("BSEC invalid state\n");
 		panic();
 	}
-
-	bsec_release_semaphore();
 }
 
 static int stm32_bsec_shadow_init(const struct device *dev)
 {
 	const struct stm32_bsec_config *drv_cfg = dev_get_config(dev);
 	const struct nvmem_cell *cell = NULL;
+	uint32_t otp_val;
 	bool sw_lock;
 	int i, j, ret;
 
@@ -787,13 +885,17 @@ static int stm32_bsec_shadow_init(const struct device *dev)
 			if (sw_lock)
 				return -EACCES;
 
-			stm32_bsec_write(cell->otp_id + j,
-					 cell->shadow_value[j]);
+			ret = stm32_bsec_read_otp(&otp_val, cell->otp_id + j);
+			if (ret)
+				return ret;
+
+			otp_val |= cell->shadow_value[j];
+			stm32_bsec_write(cell->otp_id + j, otp_val);
 
 			/* update bsec mirror */
 			ret = _otp_write(cell->otp_id, cell->n_otp * sizeof(uint32_t),
 					 cell->n_shadow_value * sizeof(uint32_t),
-					 (uint8_t *)cell->shadow_value);
+					 (uint8_t *)&otp_val);
 			if (ret)
 				return ret;
 		}
@@ -826,11 +928,27 @@ static int stm32_bsec_dt_init(const struct device *dev)
 			drv_data->hw_key_valid = true;
 	}
 
-	if (IS_ENABLED(STM32_M33TDCID))
+	if (IS_ENABLED(STM32_M33TDCID)) {
 		drv_data->verr = io_read32(drv_cfg->base + _BSEC_VERR);
+		drv_data->dbgacr = BSEC_DBGxCR_NOT_SET;
+	}
 
 	return stm32_bsec_shadow_init(dev);
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int stm32_bsec_pm_action(const struct device *dev,
+				enum pm_device_action action, uint32_t pm_hint)
+{
+	if ((PM_HINT_IS_STATE(pm_hint, CONTEXT)) &&
+	    (action == PM_DEVICE_ACTION_RESUME)) {
+		stm32_bsec_mirror_init(dev, true);
+		return stm32_bsec_shadow_init(dev);
+	}
+
+	return 0;
+}
+#endif
 
 static const struct nvmem_driver_api __maybe_unused stm32_bsec_nvmem_api = {
 	.get_cell_size = stm32_bsec_nvmem_get_cell_size,
@@ -853,7 +971,7 @@ static const struct nvmem_cell stm32_otp_cell_##node_id = {			\
 	.n_shadow_value = DT_PROP_LEN_OR(node_id, shadow_provisionning, 0)	\
 };										\
 										\
-DEVICE_DT_DEFINE(node_id, NULL,							\
+DEVICE_DT_DEFINE(node_id, NULL, NULL,						\
 		 NULL,								\
 		 &stm32_otp_cell_##node_id,					\
 		 CORE, 6,							\
@@ -888,7 +1006,9 @@ static struct stm32_bsec_data stm32_bsec3_data_ ## node_id = {			\
 										\
 static const struct device *bsec_dev = DEVICE_DT_INST_GET(0);			\
 										\
-DEVICE_DT_DEFINE(node_id, &stm32_bsec_dt_init,					\
+PM_DEVICE_DT_DEFINE(node_id, stm32_bsec_pm_action);				\
+										\
+DEVICE_DT_DEFINE(node_id, &stm32_bsec_dt_init, PM_DEVICE_DT_GET(node_id),	\
 		 &stm32_bsec3_data_##node_id,					\
 		 &stm32_bsec3_cfg_##node_id,					\
 		 CORE, 5,							\
@@ -907,6 +1027,7 @@ static __unused struct stm32_bsec_variant variant_stm32mp21 = {
 	.max_id = STM32MP2_OTP_MAX_ID,
 	.denr_all_mask = GENMASK(17, 0),
 	.denr_key = 0xdeb00000,
+	.has_hdpl = true,
 };
 
 static __unused struct stm32_bsec_variant variant_stm32mp25 = {
@@ -920,6 +1041,7 @@ static __unused struct stm32_bsec_variant variant_stm32mp25 = {
 	.max_id = STM32MP2_OTP_MAX_ID,
 	.denr_all_mask = GENMASK(15, 0),
 	.denr_key = 0xdeb60000,
+	.has_hdpl = false,
 };
 
 #undef DT_DRV_COMPAT

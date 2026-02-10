@@ -5,6 +5,7 @@
 #include <dt-bindings/clock/st,stm32mp21-rcc.h>
 #include <dt-bindings/reset/st,stm32mp21-rcc.h>
 #include <dt-bindings/scmi/stm32mp2-agents.h>
+#include <dt-bindings/syscfg/st,stm32mp21-syscfg.h>
 
 / {
 	#address-cells = <1>;
@@ -25,6 +26,13 @@
 			compatible = "arm,cortex-m33";
 			device_type = "cpu";
 			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			sau: sau@e000edd0 {
+				compatible = "arm,armv8m-sau";
+				reg = <0xe000edd0 0x20>;
+			};
 		};
 	};
 
@@ -91,22 +99,30 @@
 		nvmem-cells = <&implementation_id>,
 			      <&rpn_otp>,
 			      <&bootrom_config_9>,
+			      <&adac_socmask>,
 			      <&id_otp>,
 			      <&package_otp>,
 			      <&hconf1_otp>,
-			      <&bl2_rotpk_0>,
-			      <&bl2_rotpk_0>, /*keep the same key for slot1 */
-			      <&entropy_seed>,
+			      <&stm32certif>,
+			      <&tfm_fw_pkh>,
+			      <&ddr_fw_pkh>,
+			      <&ca35_fw_pkh>,
+			      <&fip_edmk>,
+			      <&adac_rotpkh>,
 			      <&iak>;
 		nvmem-cell-names = "implementation_id",
 				   "rpn_otp",
 				   "bootrom_config_9",
+				   "adac_socmask",
 				   "id_otp",
 				   "package_otp",
 				   "hconf1_otp",
-				   "bl2_rotpk_0",
-				   "bl2_rotpk_1",
-				   "entropy_seed",
+				   "stm32certif",
+				   "tfm_fw_pkh",
+				   "ddr_fw_pkh",
+				   "ca35_fw_pkh",
+				   "fip_edmk",
+				   "adac_rotpkh",
 				   "iak";
 		status = "okay";
 	};
@@ -152,6 +168,27 @@
 		psa_mbox: psa-mbox@0 {
 			compatible = "st,psa-mbox";
 			status = "disabled";
+		};
+
+		ramcfg: memory-controller@52070000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "st,stm32mp21-ramcfg";
+			ranges = <0 0x52070000 0x1000>;
+			status = "disabled";
+
+			ramcfg_sysram: sysram-sram@0 {
+				reg = <0x0 0x28>;
+			};
+			ramcfg_sram1: sram1-sram@80 {
+				reg = <0x80 0x28>;
+			};
+			ramcfg_retram: retram-sram@180 {
+				reg = <0x180 0x28>;
+			};
+			ramcfg_bkpsram: bkpsram-sram@380 {
+				reg = <0x380 0x28>;
+			};
 		};
 
 		rifsc: access-controller@52080000 {
@@ -397,6 +434,14 @@
 				max-frequency = <120000000>;
 				status = "disabled";
 			};
+
+			iwdg3: watchdog@54030000 {
+				compatible = "st,stm32mp13-iwdg";
+				reg = <0x54030000 0x400>;
+				clocks = <&rcc CK_BUS_IWDG3>, <&rcc LSI_CK>;
+				clock-names = "pclk", "kclk";
+				status = "disabled";
+			};
 		};
 
 		iac: iac@52090000 {
@@ -450,6 +495,7 @@
 		risaf1: risaf@520a0000 {
 			compatible = "st,stm32mp25-risaf";
 			reg = <0x520a0000 0x1000>;
+			#access-controller-cells = <2>;
 			clocks = <&rcc CK_BUS_BKPSRAM>;
 			st,mem-map = <0x0 0x52000000 0x0 0x2000>;
 			status = "disabled";
@@ -458,6 +504,7 @@
 		risaf2: risaf@520b0000 {
 			compatible = "st,stm32mp25-risaf";
 			reg = <0x520b0000 0x1000>;
+			#access-controller-cells = <2>;
 			clocks = <&rcc CK_KER_OSPI1>;
 			st,mem-map = <0x0 0x60000000 0x0 0x10000000>;
 			status = "disabled";
@@ -466,6 +513,7 @@
 		risaf4: risaf@520d0000 {
 			compatible = "st,stm32mp21-risaf-enc";
 			reg = <0x520d0000 0x1000>;
+			#access-controller-cells = <2>;
 			clocks = <&rcc CK_BUS_RISAF4>;
 			st,mem-map = <0x0 0x80000000 0x1 0x00000000>;
 			entropy = <&rng1>;
@@ -494,6 +542,11 @@
 				reg = <0x48 0x4>;
 			};
 
+			adac_socmask: otp101@194 {
+				#nvmem-cell-cells = <0>;
+				reg = <0x194 0x4>;
+			};
+
 			id_otp: otp102@198 {
 				#nvmem-cell-cells = <0>;
 				reg = <0x198 0x4>;
@@ -509,19 +562,34 @@
 				reg = <0x1f0 0x4>;
 			};
 
-			bl2_rotpk_0: otp180@2d0 {
+			stm32certif: otp128@200 {
 				#nvmem-cell-cells = <0>;
-				reg = <0x2d0 0x20>;
+				reg = <0x200 0x80>;
 			};
 
-			bl2_rotpk_1: otp188@2f0 {
+			tfm_fw_pkh: otp188@2f0 {
 				#nvmem-cell-cells = <0>;
 				reg = <0x2f0 0x20>;
 			};
 
-			entropy_seed: otp323@50c {
+			ddr_fw_pkh: otp196@310 {
 				#nvmem-cell-cells = <0>;
-				reg = <0x50c 0x40>;
+				reg = <0x310 0x20>;
+			};
+
+			ca35_fw_pkh: otp204@330 {
+				#nvmem-cell-cells = <0>;
+				reg = <0x330 0x20>;
+			};
+
+			fip_edmk: otp260@410 {
+				#nvmem-cell-cells = <0>;
+				reg = <0x410 0x20>;
+			};
+
+			adac_rotpkh: otp238@3b8 {
+				#nvmem-cell-cells = <0>;
+				reg = <0x3b8 0x20>;
 			};
 
 			iak: otp340@550 {
@@ -536,6 +604,15 @@
 			interrupts = <240 0>;
 			clocks = <&rcc CK_BUS_SERC>;
 			status = "disabled";
+		};
+
+		dbgmcu_mbx: mailbox@540a0100 {
+			compatible = "st,stm32mp21-dbgmcu-mbx";
+			reg = <0x540a0100 0xc>;
+			clocks = <&rcc CK_DBGMCU>;
+			interrupts = <208 0>,
+				     <209 0>;
+			interrupt-names = "dbg_auth_wr", "dbg_auth_rd";
 		};
 
 		rcc: rcc@54200000 {
@@ -563,7 +640,7 @@
 		};
 
 		syscfg: syscon@54230000 {
-			compatible = "st,stm32mp25-syscfg", "syscon";
+			compatible = "st,stm32mp21-syscfg", "syscon";
 			reg = <0x54230000 0x10000>;
 			#syscfg-reg-cells = <1>;
 			#syscfg-reg-mask-cells = <2>;
@@ -574,7 +651,7 @@
 			reg = <0x54210000 0x400>;
 			#access-controller-cells = <1>;
 			resets = <&rcc_reset VSW_R>;
-			st,syscfg-vddio = <&syscfg 0x4000>;
+			st,syscfg-vddio = <&syscfg STM32MP21_SYSCFG_VDDIO3CCCR>;
 			status = "disabled";
 
 			vdda18adc: vdda18adc {
@@ -772,7 +849,7 @@
 			clocks = <&rcc CK_BUS_HPDMA1>;
 			resets = <&rcc_reset HPDMA1_R>;
 			#dma-cells = <4>;
-			st,syscfg-arcr = <&syscfg 0x2050 0x1>;
+			st,syscfg-arcr = <&syscfg STM32MP21_SYSCFG_HPDMAARCR 0x1>;
 			status = "disabled";
 		};
 
@@ -782,7 +859,7 @@
 			clocks = <&rcc CK_BUS_HPDMA2>;
 			resets = <&rcc_reset HPDMA2_R>;
 			#dma-cells = <4>;
-			st,syscfg-arcr = <&syscfg 0x2050 0x2>;
+			st,syscfg-arcr = <&syscfg STM32MP21_SYSCFG_HPDMAARCR 0x2>;
 			status = "disabled";
 		};
 
@@ -792,7 +869,7 @@
 			clocks = <&rcc CK_BUS_HPDMA3>;
 			resets = <&rcc_reset HPDMA3_R>;
 			#dma-cells = <4>;
-			st,syscfg-arcr = <&syscfg 0x2050 0x4>;
+			st,syscfg-arcr = <&syscfg STM32MP21_SYSCFG_HPDMAARCR 0x4>;
 			status = "disabled";
 		};
 
@@ -815,14 +892,25 @@
 		};
 
 		tamp: tamp@56010000 {
-			compatible = "st,stm32mp25-tamp";
+			compatible = "st,stm32mp21-tamp";
 			reg = <0x56010000 0x400>;
-			clocks = <&rcc CK_BUS_RTC>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			clocks = <&rcc CK_BUS_RTC>, <&rcc RTC_CK>;
+			clock-names = "pclk", "rtc_ck";
 			interrupts = <12 0>;
 			#address-cells = <1>;
 			#size-cells = <1>;
 			ranges;
 			status = "disabled";
+
+			nvram: nvram@56010100 {
+				compatible = "st,stm32mp25-tamp-nvram";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x56010100 0x200>;
+				status = "disabled";
+			};
 		};
 
 		a35_rproc: a35@0 {

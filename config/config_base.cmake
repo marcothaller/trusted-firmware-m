@@ -35,15 +35,17 @@ set(PROJECT_CONFIG_HEADER_FILE          ""          CACHE FILEPATH  "User define
 # External libraries source and version
 set(MBEDCRYPTO_PATH                     "DOWNLOAD"  CACHE PATH      "Path to Mbed Crypto (or DOWNLOAD to fetch automatically")
 set(MBEDCRYPTO_FORCE_PATCH              OFF         CACHE BOOL      "Always apply MBed Crypto patches")
-set(MBEDCRYPTO_VERSION                  "mbedtls-3.6.2" CACHE STRING "The version of Mbed Crypto to use")
+set(MBEDCRYPTO_VERSION                  "mbedtls-3.6.4" CACHE STRING "The version of Mbed Crypto to use")
 set(MBEDCRYPTO_GIT_REMOTE               "https://github.com/Mbed-TLS/mbedtls.git" CACHE STRING "The URL (or path) to retrieve MbedTLS from.")
 
 set(MCUBOOT_PATH                        "DOWNLOAD"  CACHE PATH      "Path to MCUboot (or DOWNLOAD to fetch automatically")
 set(MCUBOOT_VERSION                     "v2.1.0"    CACHE STRING    "The version of MCUboot to use")
+set(MCUBOOT_FORCE_PATCH                 OFF         CACHE BOOL      "Always apply MCUboot patches")
 
 set(PLATFORM_PSA_ADAC_SECURE_DEBUG      FALSE       CACHE BOOL      "Whether to use psa-adac secure debug.")
 set(PLATFORM_PSA_ADAC_SOURCE_PATH       "DOWNLOAD"  CACHE PATH      "Path to source dir of psa-adac.")
 set(PLATFORM_PSA_ADAC_VERSION           "5f5490cebe66" CACHE STRING "The version of psa-adac to use.")
+set(PLATFORM_PSA_ADAC_GIT_REMOTE        "https://git.trustedfirmware.org/shared/psa-adac.git" CACHE STRING "The URL (or path) to retrieve psa-adac from.")
 
 set(PLATFORM_IS_FVP                     FALSE       CACHE BOOL      "Whether to enable FVP or FPGA build of the platform.")
 
@@ -79,6 +81,7 @@ set(CONFIG_TFM_BOOT_STORE_ENCODED_MEASUREMENTS  ON  CACHE BOOL      "Enable stor
 set(TFM_PXN_ENABLE                      OFF         CACHE BOOL      "Use Privileged execute never (PXN)")
 
 set(TFM_EXCEPTION_INFO_DUMP             OFF         CACHE BOOL      "On fatal errors in the secure firmware, capture info about the exception. Print the info if the SPM log level is sufficient.")
+set(TFM_EXCEPTION_DUMP_LVL              SPM_LOG_LEVEL_DEBUG CACHE STRING "Set default exception dump log level as SPM_LOG_LEVEL_DEBUG level.")
 set(TFM_LOG_FATAL_ERRORS                OFF         CACHE BOOL      "Log fatal errors when they occur to aid debugging")
 set(TFM_LOG_NONFATAL_ERRORS             OFF         CACHE BOOL      "Log non-fatal errors when they occur to aid debugging")
 set(TFM_HALT_ON_FATAL_ERRORS            OFF         CACHE BOOL      "On fatal errors in the secure firmware, halt immediately to allow debugging")
@@ -116,6 +119,7 @@ set(PLATFORM_DEFAULT_OTP_WRITEABLE      ON          CACHE BOOL      "Use OTP mem
 set(PLATFORM_DEFAULT_PROVISIONING       ON          CACHE BOOL      "Use default provisioning implementation")
 set(PLATFORM_DEFAULT_SYSTEM_RESET_HALT  ON          CACHE BOOL      "Use default system reset/halt implementation")
 set(PLATFORM_DEFAULT_IMAGE_SIGNING      ON          CACHE BOOL      "Use default image signing implementation")
+set(PLATFORM_DEFAULT_PROV_LINKER_SCRIPT ON          CACHE BOOL      "Use default provisioning linker script")
 
 set(TFM_DUMMY_PROVISIONING              ON          CACHE BOOL      "Provision with dummy values. NOT to be used in production")
 

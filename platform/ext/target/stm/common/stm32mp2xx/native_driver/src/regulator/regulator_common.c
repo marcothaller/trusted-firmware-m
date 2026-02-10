@@ -158,6 +158,34 @@ int regulator_disable(const struct device *dev)
 	return ret;
 }
 
+int regulator_force_enable(const struct device *dev)
+{
+	const struct regulator_driver_api *api = dev->api;
+	const struct regulator_common_config *config = dev->config;
+	int ret = 0;
+
+	/* enable not supported (always on) */
+	if (api->enable == NULL) {
+		return 0;
+	}
+	ret = api->enable(dev);
+	if (ret == 0)
+		regulator_delay(config->enable_ramp_delay_us);
+
+	return ret;
+}
+
+int regulator_force_disable(const struct device *dev)
+{
+	const struct regulator_driver_api *api = dev->api;
+
+	/* disable not supported (always on) or not previously enabled */
+	if (api->disable == NULL)
+		return 0;
+
+	return api->disable(dev);
+}
+
 bool regulator_is_supported_voltage(const struct device *dev, int32_t min_uv,
 				    int32_t max_uv)
 {
@@ -206,7 +234,7 @@ int regulator_set_voltage(const struct device *dev, int32_t min_uv,
 		return err;
 	}
 
-	if ( (current_uv >= min_uv && current_uv <= max_uv))
+	if (current_uv >= min_uv && current_uv <= max_uv)
 		return 0;
 
 	err = api->set_voltage(dev, min_uv, max_uv);
@@ -242,6 +270,31 @@ int regulator_get_voltage(const struct device *dev,
 	}
 
 	return api->get_voltage(dev, volt_uv);
+}
+
+int regulator_get_default_voltage(const struct device *dev,
+				  int32_t *volt_uv)
+{
+	const struct regulator_common_config *config = dev->config;
+	const struct regulator_driver_api *api =
+		(const struct regulator_driver_api *)dev->api;
+	int err;
+
+	if (api->get_default_voltage == NULL) {
+		return -ENOSYS;
+	}
+
+	err = api->get_default_voltage(dev, volt_uv);
+
+	if (!err) {
+		/* Snap to closest interval value if out of range */
+		if (*volt_uv < config->min_uv)
+			*volt_uv = config->min_uv;
+		else if (*volt_uv > config->max_uv)
+			*volt_uv = config->max_uv;
+	}
+
+	return err;
 }
 
 int regulator_set_current_limit(const struct device *dev, int32_t min_ua,

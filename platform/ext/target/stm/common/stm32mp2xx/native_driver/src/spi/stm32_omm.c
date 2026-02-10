@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2024, STMicroelectronics - All Rights Reserved
  *
- * SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+ * SPDX-License-Identifier: GPL-2.0-only OR BSD-3-Clause
  */
 #define DT_DRV_COMPAT st_stm32mp25_omm
 
@@ -19,6 +19,8 @@
 #include <firewall.h>
 #include <syscon.h>
 #include <debug.h>
+#include <pm/device.h>
+#include <pm/pm.h>
 
 /*
  * OCTOSPIM registers
@@ -267,7 +269,7 @@ static int stm32_omm_configure(const struct device *dev)
 	return 0;
 }
 
-int stm32_omm_init(const struct device *dev)
+static __unused int stm32_omm_init(const struct device *dev)
 {
 	const struct stm32_omm_cfg *drv_cfg = dev_get_config(dev);
 	struct firewall_spec *firewall;
@@ -283,8 +285,9 @@ int stm32_omm_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = pinctrl_apply_state(drv_cfg->pcfg, PINCTRL_STATE_DEFAULT);
-	if ((ret != 0) && (ret != -ENOENT)) {
+	ret = pinctrl_apply_state_optional(drv_cfg->pcfg,
+					   PINCTRL_STATE_DEFAULT);
+	if (ret != 0) {
 		return ret;
 	}
 
@@ -299,6 +302,27 @@ int stm32_omm_init(const struct device *dev)
 
 	return ret;
 }
+
+#ifdef CONFIG_PM_DEVICE
+static __unused int stm32_omm_pm_action(const struct device *dev,
+					enum pm_device_action action,
+					uint32_t pm_hint)
+{
+	const struct stm32_omm_cfg *drv_cfg = dev_get_config(dev);
+
+	if (action == PM_DEVICE_ACTION_SUSPEND) {
+		return pinctrl_apply_state_optional(drv_cfg->pcfg,
+						    PINCTRL_STATE_SLEEP);
+	}
+
+	if (!PM_HINT_IS_STATE(pm_hint, CONTEXT)) {
+		return pinctrl_apply_state_optional(drv_cfg->pcfg,
+						    PINCTRL_STATE_DEFAULT);
+	}
+
+	return stm32_omm_init(dev);
+}
+#endif
 
 #define DT_GET_MM_BASE_BY_NAME_OR(n, name)							\
 	COND_CODE_1(DT_INST_PROP_HAS_NAME(n, memory_region, name),				\
@@ -348,7 +372,10 @@ static const struct stm32_omm_cfg stm32_omm_cfg_##n = {						\
 	.n_ospi_cfg = ARRAY_SIZE(stm32_ospi_cfg_##n),						\
 };												\
 												\
+PM_DEVICE_DT_INST_DEFINE(n, stm32_omm_pm_action);						\
+												\
 DEVICE_DT_INST_DEFINE(n, &stm32_omm_init,							\
+		      PM_DEVICE_DT_INST_GET(n),							\
 		      NULL, &stm32_omm_cfg_##n,							\
 		      CORE, 11, NULL);
 

@@ -791,6 +791,23 @@
 	DT_CAT5(node_id, _P_, prop, _IDX_, idx)
 
 /**
+ * @brief Like DT_PROP_BY_IDX(), but with a fallback to a default value
+ *
+ * If the value exists, this expands to DT_PROP_BY_IDX(node_id, prop, idx).
+ * The default_value parameter is not expanded in this case.
+ *
+ * @param node_id node identifier
+ * @param prop lowercase-and-underscores property name
+ * @param idx the index to get
+ * @param default_value a fallback value to expand to
+ * @return a representation of the idx-th element of the property
+ */
+#define DT_PROP_BY_IDX_OR(node_id, prop, idx, default_value) \
+	COND_CODE_1(DT_PROP_HAS_IDX(node_id, prop, idx), \
+		    (DT_PROP_BY_IDX(node_id, prop, idx)), \
+		    (default_value))
+
+/**
  * @brief Like DT_PROP(), but with a fallback to @p default_value
  *
  * If the value exists, this expands to DT_PROP(node_id, prop).
@@ -3183,6 +3200,28 @@
  */
 #define DT_NODE_HAS_STATUS(node_id, status) \
 	DT_NODE_HAS_STATUS_INTERNAL(node_id, status)
+
+/**
+ * @brief Does a node identifier refer to a node with a status `okay`?
+ *
+ * Example uses:
+ *
+ * @code{.c}
+ *     DT_NODE_HAS_STATUS_OKAY(DT_PATH(soc, i2c_12340000))
+ * @endcode
+ *
+ * Tests whether a node identifier refers to a node which:
+ *
+ * - exists in the devicetree, and
+ * - has a status property as `okay`
+ *
+ * As usual, both a missing status and an `ok` status are treated as
+ * `okay`.
+ *
+ * @param node_id a node identifier
+ * @return 1 if the node has status as `okay`, 0 otherwise.
+ */
+#define DT_NODE_HAS_STATUS_OKAY(node_id) DT_NODE_HAS_STATUS(node_id, okay)
 
 /**
  * @brief Does the devicetree have a status `okay` node with a compatible?

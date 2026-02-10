@@ -13,10 +13,16 @@
 
 # set platform directory
 set(STM_BOARD_DIR ${CMAKE_CURRENT_LIST_DIR})
+if (TARGET_PATH)
+set(STM_DIR ${TARGET_PATH}/stm)
+else()
 set(STM_DIR ${STM_BOARD_DIR}/..)
+endif()
+
+set(STM32_SOC_NAME  STM32MP215Fxx           CACHE STRING    "Define SoC model name" FORCE)
 
 include(${STM_DIR}/common/stm32mp2xx/stm32mp21/cpuarch.cmake)
 
 add_compile_definitions(
-    STM32MP215Cxx
+    ${STM32_SOC_NAME}
 )

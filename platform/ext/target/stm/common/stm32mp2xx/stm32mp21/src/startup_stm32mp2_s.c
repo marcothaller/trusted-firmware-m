@@ -189,7 +189,9 @@ DEFAULT_IRQ_HANDLER(USBH_EHCI_IRQHandler)
 DEFAULT_IRQ_HANDLER(USBH_OHCI_IRQHandler)
 DEFAULT_IRQ_HANDLER(DCMI_PSSI_IRQHandler)
 DEFAULT_IRQ_HANDLER(CSI2HOST_IRQHandler)
+#if defined(STM32MP2_HAS_CRYPTO)
 DEFAULT_IRQ_HANDLER(CRYP1_IRQHandler)
+#endif /* STM32MP2_HAS_CRYPTO */
 DEFAULT_IRQ_HANDLER(HASH1_IRQHandler)
 DEFAULT_IRQ_HANDLER(PKA_IRQHandler)
 DEFAULT_IRQ_HANDLER(FPU_IRQHandler)
@@ -215,8 +217,10 @@ DEFAULT_IRQ_HANDLER(IPCC1_RX_IRQHandler)
 DEFAULT_IRQ_HANDLER(IPCC1_TX_IRQHandler)
 DEFAULT_IRQ_HANDLER(IPCC1_RX_S_IRQHandler)
 DEFAULT_IRQ_HANDLER(IPCC1_TX_S_IRQHandler)
+#if defined(STM32MP2_HAS_CRYPTO)
 DEFAULT_IRQ_HANDLER(SAES_IRQHandler)
 DEFAULT_IRQ_HANDLER(CRYP2_IRQHandler)
+#endif /* STM32MP2_HAS_CRYPTO */
 DEFAULT_IRQ_HANDLER(OTG_WAKEUP_IRQHandler)
 DEFAULT_IRQ_HANDLER(MDF1_FLT0_IRQHandler)
 DEFAULT_IRQ_HANDLER(MDF1_FLT1_IRQHandler)
@@ -282,6 +286,8 @@ DEFAULT_IRQ_HANDLER(EXTI1_13_IRQHandler)
 DEFAULT_IRQ_HANDLER(EXTI1_14_IRQHandler)
 DEFAULT_IRQ_HANDLER(EXTI1_15_IRQHandler)
 DEFAULT_IRQ_HANDLER(DDRPERFM_IRQHandler)
+DEFAULT_IRQ_HANDLER(RESERVED_284_IRQHandler)
+DEFAULT_IRQ_HANDLER(RESERVED_285_IRQHandler)
 
 /*----------------------------------------------------------------------------
   Exception / Interrupt Vector table
@@ -313,9 +319,9 @@ const VECTOR_TABLE_Type __VECTOR_TABLE[] __VECTOR_TABLE_ATTRIBUTE = {
 	SysTick_Handler,       /* SysTick Handler, */
 	/*******************************************************************************/
 	/* External interrupts according to                                            */
-	/* Based on TinyPanther_interrupts.xlsm V 0.8 at below location              */
-	/* https://epm-st.st.com/ProjectServerST/Tiny%20Panther%20(503)/             */
-	/*     Working%20documents/Product%20description/                              */
+	/* "Table 187. interrupt mapping for Cortex®-M33"                              */
+	/* in chapter 26 "interrupt list" of reference document                        */
+	/* RM0506 - Reference Manual - STM32MP21xx - advanced ARM-based 32/64-bit MPUs */
 	/*******************************************************************************/
 	PVD_IRQHandler,              /* PVD detector through EXTI */
 	PVM_IRQHandler,              /* PVM detector through EXTI */
@@ -448,7 +454,11 @@ const VECTOR_TABLE_Type __VECTOR_TABLE[] __VECTOR_TABLE_ATTRIBUTE = {
 	DCMI_PSSI_IRQHandler,        /* DCMI & PSSI global interrupt */
 	CSI2HOST_IRQHandler,         /* CSI2 Host controller interrupt */
 	0,
+#if defined(STM32MP2_HAS_CRYPTO)
 	CRYP1_IRQHandler,            /* Crypto1 interrupt */
+#else /* STM32MP2_HAS_CRYPTO */
+	0,
+#endif /* STM32MP2_HAS_CRYPTO */
 	HASH1_IRQHandler,            /* Hash1 interrupt */
 	PKA_IRQHandler,              /* PKA interrupt */
 	FPU_IRQHandler,              /* FPU global interrupt */
@@ -473,8 +483,13 @@ const VECTOR_TABLE_Type __VECTOR_TABLE[] __VECTOR_TABLE_ATTRIBUTE = {
 	IPCC1_TX_IRQHandler,         /* Mailbox 1 TX Free interrupt */
 	IPCC1_RX_S_IRQHandler,       /* Mailbox 1 RX Occupied secure interrupt */
 	IPCC1_TX_S_IRQHandler,       /* Mailbox 1 TX Free secure interrupt */
+#if defined(STM32MP2_HAS_CRYPTO)
 	SAES_IRQHandler,             /* Secure AES */
 	CRYP2_IRQHandler,            /* Crypto2 interrupt */
+#else /* STM32MP2_HAS_CRYPTO */
+	0,
+	0,
+#endif /* STM32MP2_HAS_CRYPTO */
 	OTG_WAKEUP_IRQHandler,       /* USB2 DR Remote Wake up from USB2PHY2 */
 	0,
 	MDF1_FLT0_IRQHandler,        /* MDF1 Filter0 Interrupt */
@@ -601,8 +616,8 @@ const VECTOR_TABLE_Type __VECTOR_TABLE[] __VECTOR_TABLE_ATTRIBUTE = {
 	EXTI1_13_IRQHandler,         /* EXTI1 Line 13 interrupt */
 	EXTI1_14_IRQHandler,         /* EXTI1 Line 14 interrupt */
 	EXTI1_15_IRQHandler,         /* EXTI1 Line 15 interrupt */
-	0,
-	0,
+	RESERVED_284_IRQHandler,
+	RESERVED_285_IRQHandler,
 	0,
 	0,
 	0,

@@ -22,6 +22,7 @@
 #include "device_cfg.h"
 #include "devicetree.h"
 #include <cmsis_fixed_partitions.h>
+#include <soc_config.h>
 
 /*
  * In M33tdcid
@@ -61,41 +62,6 @@
  *       Z:0x0000_0000 - Z:0x0008_0000		    Secure image
  *       Z:0x0008_0000 - Z:0x0010_0000		    Non-secure image
  */
-
-/* This header file is included from linker scatter file as well, where only a
- * limited C constructs are allowed. Therefore it is not possible to include
- * here the platform_base_address.h to access flash related defines. To resolve
- * this some of the values are redefined here with different names, these are
- * marked with comment.
- */
-#define S_RETRAM_ALIAS_BASE		(0x0E040000)
-#define NS_RETRAM_ALIAS_BASE		(0x0A040000)
-#define RETRAM_SZ			(0x18000)		/* 128KB */
-
-#define S_SRAM1_ALIAS_BASE		(0x0E060000)
-#define NS_SRAM1_ALIAS_BASE		(0x0A060000)
-#define SRAM1_SZ			(0x10000)		/* 64KB */
-
-#define S_SYSRAM_ALIAS_BASE		(0x0E000000)
-#define NS_SYSRAM_ALIAS_BASE		(0x0A000000)
-#define SYSRAM_SZ			(0x40000)		/* 256KB */
-
-#define S_BKPSRAM_ALIAS_BASE		(0x52000000)
-#define NS_BKPSRAM_ALIAS_BASE		(0x42000000)
-#define BKPSRAM_SZ			(0x2000)		/* 8KB */
-
-#define S_BKPREG_ALIAS_BASE		(0x56010000 + 0x100)	/* tamp base + bkpreg offset */
-#define NS_BKPREG_ALIAS_BASE		(0x46010000 + 0x100)
-#define BKPREG_SZ			(0x80)			/* 128B */
-
-#define OSPI_MEM_BASE			(0x60000000)
-
-#define NS_DDR_ALIAS_BASE		(0x80000000)
-
-/* 3 areas are available to define all regions of cache */
-#define NS_REMAP3_ALIAS_BASE		(0x18000000)
-#define NS_REMAP2_ALIAS_BASE		(0x10000000)
-#define NS_REMAP1_ALIAS_BASE		(0x00000000)
 
 /*
  * Offset and size definition in flash area used by assemble.py
@@ -191,11 +157,6 @@
 #define FLASH_BASE_ADDRESS		(OSPI1_MEM_BASE)
 #define FLASH_AREA_IMAGE_SECTOR_SIZE	TFM_HAL_FLASH_PROGRAM_UNIT
 
-#define FLASH_IMAGE_OFFSET		0x0
-
-#define FLASH_AREA_BL2_OFFSET		FLASH_IMAGE_OFFSET
-#define FLASH_AREA_BL2_SIZE		RETRAM_SZ
-
 /*
  * Not used, only the RAM loading firmware upgrade operation
  * is supported on STM32MP2. The maximum number of status entries
@@ -222,10 +183,6 @@
 #define FLASH_DEVICE_ID_4		104
 #define FLASH_AREA_5_ID			(FLASH_AREA_4_ID + 1)
 #define FLASH_DEVICE_ID_5		105
-
-#define FLASH_DEV_FW_DDR_NAME		DT_CMSIS_FIXED_PARTITIONS_DRIVER_BY_LABEL(ddr_fw_primary_partition)
-#define FLASH_DEV_FW_DDR_OFFSET		DT_CMSIS_FIXED_PARTITIONS_ADDR_BY_LABEL(ddr_fw_primary_partition)
-#define FLASH_DEV_FW_DDR_SIZE		DT_CMSIS_FIXED_PARTITIONS_SIZE_BY_LABEL(ddr_fw_primary_partition)
 
 #ifdef STM32_BOOT_DEV_SDMMC1
 #define STM32_FLASH_SDMMC1
